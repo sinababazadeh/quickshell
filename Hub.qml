@@ -66,15 +66,23 @@ Pill {
     // ─── Theme tab: manage view (opened with the cog) ────────────────────────────
     property string themePage: "picker"      // "picker" | "manage"
     property string editingPath: ""          // wallpaper whose palette slot is being edited
-    property string editingSlot: ""          // which palette slot is being edited
-    property var picturesList: []            // images in ~/Pictures (import candidates)
-    readonly property var chipColors: [      // curated swatches for the slot editor
-        "#f5f5f5", "#d8d8ff", "#a3a1f9", "#814ed4", "#2f1ea0", "#140a4e", "#0f0b26",
-        "#1e0d8c", "#7749a6", "#f27289", "#f38ba8", "#f9e2af", "#a6e3a1", "#89dceb",
-        "#eba0ac", "#c8f025", "#94e2d5", "#010101"
-    ]
+    property string editingSlot: "attention" // which palette slot is being edited
+    property string hoveredSlot: ""          // slot currently hovered over (for dynamic name reveal)
 
-    onThemePageChanged: if (themePage === "manage") root.refreshPictures()
+    function slotRoleName(slot) {
+        switch (slot) {
+            case "bg":        return "Base Background"
+            case "indigo":    return "Elevated Surface"
+            case "violet":    return "Secondary Surface"
+            case "primary":   return "Primary Capsule"
+            case "attention": return "Accent & Active"
+            case "plum":      return "Icon Badge"
+            case "ink":       return "Main Text / Ink"
+            case "cream":     return "Secondary Text"
+            case "lavender":  return "Muted Text"
+            default:          return slot || "Color Slot"
+        }
+    }
 
     // ─── Weather ────────────────────────────────────────────────────────────────
     property string weatherLocation: ""      // empty = auto-detect by IP; or set e.g. "tabriz", "London"
@@ -1449,6 +1457,7 @@ Pill {
 
                                     // ── Header: title | refresh ──────────────────
                                     RowLayout {
+                                        visible: root.themePage === "picker"
                                         Layout.fillWidth: true
                                         spacing: 8
 
@@ -1475,7 +1484,7 @@ Pill {
                                             }
                                         }
 
-                                        // Theme settings — opens the manage view
+                                        // Theme settings — opens the manage view for currently active wallpaper
                                         Text {
                                             text: "settings"
                                             font.family: Theme.fontIcons
@@ -1486,12 +1495,24 @@ Pill {
                                             MouseArea {
                                                 anchors.fill: parent
                                                 cursorShape: Qt.PointingHandCursor
-                                                onClicked: root.themePage = "manage"
+                                                onClicked: {
+                                                    let target = WallpaperState.current || (root.wallpapers.length > 0 ? root.wallpapers[0] : "")
+                                                    if (target) PaletteState.ensureRegistered(target)
+                                                    root.editingPath = target
+                                                    root.editingSlot = "attention"
+                                                    root.hoveredSlot = ""
+                                                    root.themePage = "manage"
+                                                }
                                             }
                                         }
                                     }
 
-                                    Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.pillBorder }
+                                    Rectangle {
+                                        visible: root.themePage === "picker"
+                                        Layout.fillWidth: true
+                                        implicitHeight: 1
+                                        color: Theme.pillBorder
+                                    }
 
                                     // Empty state when the wallpapers folder has no images.
                                     Text {
@@ -1569,406 +1590,426 @@ Pill {
                                         }
                                     }
 
-                                    // ── MANAGE VIEW  (opened with the cog) ───────
+                                    // ── MANAGE VIEW  (opened with the cog for active wallpaper) ───────
                                     ColumnLayout {
+                                        id: manageViewCol
                                         visible: root.themePage === "manage"
                                         Layout.fillWidth: true
                                         Layout.fillHeight: true
-                                        spacing: 8
+                                        spacing: 10
 
-                                        // Header: back | title
+                                        readonly property string inspectedSlot: root.hoveredSlot !== "" ? root.hoveredSlot : root.editingSlot
+                                        readonly property color inspectedColor: root.editingPath ? PaletteState.colorFor(root.editingPath, inspectedSlot) : Theme.attention
+
+                                        // ── 1. Header: Back button | Active wallpaper info | Reset ──
                                         RowLayout {
                                             Layout.fillWidth: true
                                             spacing: 8
 
-                                            Text {
-                                                text: "arrow_back"
-                                                font.family: Theme.fontIcons
-                                                font.pixelSize: 20
-                                                color: Theme.qsAccent
-                                                Layout.alignment: Qt.AlignVCenter
+                                            Rectangle {
+                                                width: 28
+                                                height: 28
+                                                radius: 14
+                                                color: Theme.qsBgAlt
+                                                border.width: 1
+                                                border.color: Theme.pillBorder
+
+                                                Text {
+                                                    anchors.centerIn: parent
+                                                    text: "arrow_back"
+                                                    font.family: Theme.fontIcons
+                                                    font.pixelSize: 17
+                                                    color: Theme.attention
+                                                }
+
                                                 MouseArea {
                                                     anchors.fill: parent
                                                     cursorShape: Qt.PointingHandCursor
                                                     onClicked: {
                                                         root.editingPath = ""
+                                                        root.hoveredSlot = ""
                                                         root.themePage = "picker"
                                                     }
                                                 }
                                             }
 
-                                            Text {
-                                                text: "Theme Settings & Color Slots"
-                                                font.family: Theme.fontText
-                                                font.pixelSize: 14
-                                                font.bold: true
-                                                color: Theme.qsText
+                                            Rectangle {
+                                                width: 44
+                                                height: 26
+                                                radius: 5
+                                                color: Theme.qsBg
+                                                border.width: 1
+                                                border.color: Theme.pillBorder
+                                                clip: true
+
+                                                Image {
+                                                    anchors.fill: parent
+                                                    source: root.editingPath
+                                                    fillMode: Image.PreserveAspectCrop
+                                                    asynchronous: true
+                                                }
+                                            }
+
+                                            ColumnLayout {
+                                                spacing: 0
                                                 Layout.fillWidth: true
-                                                Layout.alignment: Qt.AlignVCenter
+
+                                                RowLayout {
+                                                    spacing: 6
+                                                    Text {
+                                                        text: root.editingPath ? root.editingPath.split("/").pop() : "Active Theme"
+                                                        font.family: Theme.fontText
+                                                        font.pixelSize: 12
+                                                        font.bold: true
+                                                        color: Theme.qsText
+                                                        elide: Text.ElideRight
+                                                        Layout.maximumWidth: 260
+                                                    }
+
+                                                    Rectangle {
+                                                        radius: 4
+                                                        color: Theme.attention
+                                                        implicitHeight: 15
+                                                        implicitWidth: activeBadgeText.implicitWidth + 8
+
+                                                        Text {
+                                                            id: activeBadgeText
+                                                            anchors.centerIn: parent
+                                                            text: "ACTIVE"
+                                                            font.family: Theme.fontText
+                                                            font.pixelSize: 8
+                                                            font.bold: true
+                                                            color: Theme.ink
+                                                        }
+                                                    }
+                                                }
+
+                                                Text {
+                                                    text: "Hover over swatches to reveal color roles · click to edit"
+                                                    font.family: Theme.fontText
+                                                    font.pixelSize: 9
+                                                    color: Theme.qsTextMuted
+                                                }
+                                            }
+
+                                            // Reset palette button
+                                            Rectangle {
+                                                implicitHeight: 26
+                                                implicitWidth: resetContentRow.implicitWidth + 12
+                                                radius: 13
+                                                color: Theme.qsBgAlt
+                                                border.width: 1
+                                                border.color: Theme.pillBorder
+
+                                                RowLayout {
+                                                    id: resetContentRow
+                                                    anchors.centerIn: parent
+                                                    spacing: 4
+
+                                                    Text {
+                                                        text: "restart_alt"
+                                                        font.family: Theme.fontIcons
+                                                        font.pixelSize: 13
+                                                        color: Theme.qsTextMuted
+                                                    }
+
+                                                    Text {
+                                                        text: "Reset"
+                                                        font.family: Theme.fontText
+                                                        font.pixelSize: 10
+                                                        font.bold: true
+                                                        color: Theme.qsTextMuted
+                                                    }
+                                                }
+
+                                                MouseArea {
+                                                    anchors.fill: parent
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: {
+                                                        if (root.editingPath) {
+                                                            PaletteState.resetPalette(root.editingPath)
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
 
                                         Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.pillBorder }
 
-                                        // Scrollable container for wallpapers list & editors
-                                        Flickable {
-                                            id: manageFlick
+                                        // ── 2. Dynamic Info Banner (Reveals slot name only on hover or selection) ──
+                                        Rectangle {
                                             Layout.fillWidth: true
-                                            Layout.fillHeight: true
-                                            clip: true
-                                            contentWidth: width
-                                            contentHeight: manageCol.implicitHeight
+                                            height: 36
+                                            radius: 7
+                                            color: Theme.qsBgAlt
+                                            border.width: 1
+                                            border.color: root.hoveredSlot !== "" ? Theme.attention : Theme.pillBorder
 
-                                            ColumnLayout {
-                                                id: manageCol
-                                                width: manageFlick.width
-                                                spacing: 10
+                                            RowLayout {
+                                                anchors.fill: parent
+                                                anchors.leftMargin: 12
+                                                anchors.rightMargin: 12
+                                                spacing: 8
 
-                                                // ── One row per wallpaper ────────────────
-                                                Repeater {
-                                                    model: root.wallpapers
-                                                    Rectangle {
-                                                        id: wallCard
-                                                        required property string modelData
-                                                        Layout.fillWidth: true
-                                                        implicitHeight: wallRow.implicitHeight + 16
-                                                        radius: 8
-                                                        color: wallCard.modelData === WallpaperState.current ? Theme.primary : Theme.qsBgAlt
-                                                        border.width: 1
-                                                        border.color: wallCard.modelData === WallpaperState.current ? Theme.attention : Theme.pillBorder
-
-                                                        ColumnLayout {
-                                                            id: wallRow
-                                                            anchors.fill: parent
-                                                            anchors.margins: 8
-                                                            spacing: 6
-
-                                                            RowLayout {
-                                                                Layout.fillWidth: true
-                                                                spacing: 8
-
-                                                                Rectangle {
-                                                                    width: 52
-                                                                    height: 30
-                                                                    radius: 6
-                                                                    color: Theme.qsBg
-                                                                    clip: true
-                                                                    Image {
-                                                                        anchors.fill: parent
-                                                                        source: wallCard.modelData
-                                                                        fillMode: Image.PreserveAspectCrop
-                                                                        asynchronous: true
-                                                                    }
-                                                                }
-
-                                                                Text {
-                                                                    text: wallCard.modelData.split("/").pop()
-                                                                    font.family: Theme.fontText
-                                                                    font.pixelSize: 12
-                                                                    font.bold: wallCard.modelData === WallpaperState.current
-                                                                    color: Theme.qsText
-                                                                    elide: Text.ElideRight
-                                                                    Layout.fillWidth: true
-                                                                }
-
-                                                                Text {
-                                                                    visible: wallCard.modelData === WallpaperState.current
-                                                                    text: "ACTIVE"
-                                                                    font.family: Theme.fontText
-                                                                    font.pixelSize: 9
-                                                                    font.bold: true
-                                                                    color: Theme.attention
-                                                                }
-
-                                                                // Reset to defaults button
-                                                                Rectangle {
-                                                                    width: 22
-                                                                    height: 22
-                                                                    radius: 11
-                                                                    color: Theme.qsBg
-                                                                    border.width: 1
-                                                                    border.color: Theme.pillBorder
-
-                                                                    Text {
-                                                                        anchors.centerIn: parent
-                                                                        text: "restart_alt"
-                                                                        font.family: Theme.fontIcons
-                                                                        font.pixelSize: 13
-                                                                        color: Theme.qsTextMuted
-                                                                    }
-
-                                                                    MouseArea {
-                                                                        anchors.fill: parent
-                                                                        cursorShape: Qt.PointingHandCursor
-                                                                        onClicked: PaletteState.resetPalette(wallCard.modelData)
-                                                                    }
-                                                                }
-                                                            }
-
-                                                            // Color dots row with slot names
-                                                            RowLayout {
-                                                                Layout.fillWidth: true
-                                                                spacing: 5
-
-                                                                Repeater {
-                                                                    model: PaletteState.slotNames
-
-                                                                    Rectangle {
-                                                                        id: slotDot
-                                                                        required property string modelData
-                                                                        width: 18
-                                                                        height: 18
-                                                                        radius: 9
-                                                                        color: PaletteState.colorFor(wallCard.modelData, slotDot.modelData)
-                                                                        border.width: root.editingPath === wallCard.modelData && root.editingSlot === slotDot.modelData ? 2 : 1
-                                                                        border.color: root.editingPath === wallCard.modelData && root.editingSlot === slotDot.modelData ? Theme.attention : Theme.pillBorder
-
-                                                                        MouseArea {
-                                                                            anchors.fill: parent
-                                                                            cursorShape: Qt.PointingHandCursor
-                                                                            onClicked: {
-                                                                                root.editingPath = wallCard.modelData
-                                                                                root.editingSlot = slotDot.modelData
-                                                                            }
-                                                                        }
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-
-                                                // ── SLOT EDITOR (chip grid & hex input) ────────
                                                 Rectangle {
-                                                    id: slotEditorCard
-                                                    visible: root.editingPath !== ""
-                                                    Layout.fillWidth: true
-                                                    implicitHeight: slotEditor.implicitHeight + 18
-                                                    radius: 8
-                                                    color: Theme.qsBgAlt
-                                                    border.width: 1
-                                                    border.color: Theme.attention
-
-                                                    ColumnLayout {
-                                                        id: slotEditor
-                                                        anchors.fill: parent
-                                                        anchors.margins: 9
-                                                        spacing: 8
-
-                                                        function applyHex() {
-                                                            if (!hexInput.valid) return
-                                                            PaletteState.assignColor(root.editingPath, root.editingSlot, hexInput.normalized)
-                                                            hexInput.text = ""
-                                                        }
-
-                                                        onVisibleChanged: if (visible) {
-                                                            hexInput.text = ""
-                                                            hexInput.forceActiveFocus()
-                                                        }
-
-                                                        RowLayout {
-                                                            Layout.fillWidth: true
-                                                            spacing: 8
-
-                                                            Rectangle {
-                                                                width: 16
-                                                                height: 16
-                                                                radius: 8
-                                                                color: PaletteState.colorFor(root.editingPath, root.editingSlot)
-                                                                border.width: 1
-                                                                border.color: Theme.pillBorder
-                                                            }
-
-                                                            Text {
-                                                                text: "Editing: " + root.editingSlot.toUpperCase() + "  (" + (root.editingPath.split("/").pop()) + ")"
-                                                                font.family: Theme.fontText
-                                                                font.pixelSize: 11
-                                                                font.bold: true
-                                                                color: Theme.attention
-                                                                elide: Text.ElideRight
-                                                                Layout.fillWidth: true
-                                                            }
-
-                                                            Text {
-                                                                text: "close"
-                                                                font.family: Theme.fontIcons
-                                                                font.pixelSize: 16
-                                                                color: Theme.qsTextMuted
-
-                                                                MouseArea {
-                                                                    anchors.fill: parent
-                                                                    cursorShape: Qt.PointingHandCursor
-                                                                    onClicked: root.editingPath = ""
-                                                                }
-                                                            }
-                                                        }
-
-                                                        Flow {
-                                                            Layout.fillWidth: true
-                                                            spacing: 6
-
-                                                            Repeater {
-                                                                model: root.chipColors
-
-                                                                Rectangle {
-                                                                    id: chip
-                                                                    required property string modelData
-                                                                    width: 24
-                                                                    height: 24
-                                                                    radius: 12
-                                                                    color: chip.modelData
-                                                                    border.width: 1
-                                                                    border.color: Theme.pillBorder
-
-                                                                    MouseArea {
-                                                                        anchors.fill: parent
-                                                                        cursorShape: Qt.PointingHandCursor
-                                                                        onClicked: PaletteState.assignColor(root.editingPath, root.editingSlot, chip.modelData)
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-
-                                                        // ── HEX INPUT ROW ───────────────────────
-                                                        RowLayout {
-                                                            Layout.fillWidth: true
-                                                            spacing: 8
-
-                                                            Rectangle {
-                                                                id: hexBox
-                                                                width: 130
-                                                                height: 28
-                                                                radius: 6
-                                                                color: Theme.qsBg
-                                                                border.width: hexInput.activeFocus ? 2 : 1
-                                                                border.color: hexInput.activeFocus ? Theme.attention : Theme.pillBorder
-
-                                                                TextInput {
-                                                                    id: hexInput
-                                                                    anchors.fill: parent
-                                                                    anchors.leftMargin: 8
-                                                                    anchors.rightMargin: 8
-                                                                    verticalAlignment: TextInput.AlignVCenter
-                                                                    color: Theme.qsText
-                                                                    font.family: Theme.fontText
-                                                                    font.pixelSize: 12
-                                                                    font.bold: true
-                                                                    selectionColor: Theme.attention
-                                                                    selectedTextColor: Theme.ink
-                                                                    clip: true
-
-                                                                    property string normalized: {
-                                                                        let t = text.trim()
-                                                                        return t.charAt(0) === "#" ? t : "#" + t
-                                                                    }
-
-                                                                    readonly property bool valid: PaletteState.isValidHex(normalized)
-
-                                                                    onAccepted: slotEditor.applyHex()
-                                                                }
-                                                            }
-
-                                                            // Live preview
-                                                            Rectangle {
-                                                                width: 28
-                                                                height: 28
-                                                                radius: 14
-                                                                color: hexInput.valid ? hexInput.normalized : PaletteState.colorFor(root.editingPath, root.editingSlot)
-                                                                border.width: 1
-                                                                border.color: Theme.pillBorder
-                                                            }
-
-                                                            // Apply button
-                                                            Rectangle {
-                                                                width: 28
-                                                                height: 28
-                                                                radius: 14
-                                                                color: hexInput.valid ? Theme.attention : Theme.qsBg
-                                                                opacity: hexInput.valid ? 1 : 0.4
-
-                                                                Text {
-                                                                    anchors.centerIn: parent
-                                                                    text: "check"
-                                                                    font.family: Theme.fontIcons
-                                                                    font.pixelSize: 15
-                                                                    color: Theme.ink
-                                                                }
-
-                                                                MouseArea {
-                                                                    anchors.fill: parent
-                                                                    cursorShape: Qt.PointingHandCursor
-                                                                    onClicked: slotEditor.applyHex()
-                                                                }
-                                                            }
-
-                                                            Text {
-                                                                text: "hex"
-                                                                font.family: Theme.fontText
-                                                                font.pixelSize: 10
-                                                                color: Theme.qsTextMuted
-                                                            }
-                                                        }
-                                                    }
+                                                    width: 18
+                                                    height: 18
+                                                    radius: 9
+                                                    color: manageViewCol.inspectedColor
+                                                    border.width: 1.5
+                                                    border.color: Theme.ink
                                                 }
 
-                                                Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.pillBorder }
-
-                                                // ── ADD FROM ~/Pictures ──────────────────────
                                                 Text {
-                                                    text: "Add from ~/Pictures"
+                                                    text: root.slotRoleName(manageViewCol.inspectedSlot)
+                                                    font.family: Theme.fontText
+                                                    font.pixelSize: 12
+                                                    font.bold: true
+                                                    color: root.hoveredSlot !== "" ? Theme.attention : Theme.qsText
+                                                }
+
+                                                Text {
+                                                    text: "(" + manageViewCol.inspectedSlot + ")"
                                                     font.family: Theme.fontText
                                                     font.pixelSize: 11
-                                                    font.bold: true
                                                     color: Theme.qsTextMuted
                                                 }
 
-                                                Flow {
-                                                    visible: root.picturesList.length > 0
-                                                    Layout.fillWidth: true
-                                                    spacing: 8
+                                                Item { Layout.fillWidth: true }
 
-                                                    Repeater {
-                                                        model: root.picturesList
-
-                                                        Rectangle {
-                                                            id: picCell
-                                                            required property string modelData
-                                                            width: 72
-                                                            height: 44
-                                                            radius: 6
-                                                            color: Theme.qsBgAlt
-                                                            clip: true
-                                                            border.width: 1
-                                                            border.color: Theme.pillBorder
-
-                                                            Image {
-                                                                anchors.fill: parent
-                                                                source: picCell.modelData
-                                                                fillMode: Image.PreserveAspectCrop
-                                                                asynchronous: true
-                                                            }
-
-                                                            MouseArea {
-                                                                anchors.fill: parent
-                                                                cursorShape: Qt.PointingHandCursor
-                                                                onClicked: {
-                                                                    importProc.source = picCell.modelData
-                                                                    importProc.running = true
-                                                                }
-                                                            }
-                                                        }
-                                                    }
+                                                Text {
+                                                    text: manageViewCol.inspectedColor.toString().toUpperCase()
+                                                    font.family: Theme.fontText
+                                                    font.pixelSize: 12
+                                                    font.bold: true
+                                                    color: Theme.qsText
                                                 }
 
                                                 Text {
-                                                    text: "…or drop files into ~/.config/quickshell/wallpapers and hit refresh on the picker."
+                                                    visible: root.hoveredSlot !== "" && root.hoveredSlot !== root.editingSlot
+                                                    text: "• click to select"
                                                     font.family: Theme.fontText
                                                     font.pixelSize: 10
-                                                    color: Theme.qsTextMuted
-                                                    Layout.fillWidth: true
+                                                    color: Theme.attention
                                                 }
                                             }
                                         }
+
+                                        // ── 3. Clean Color Swatches (No static text!) ──
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 8
+
+                                            Repeater {
+                                                model: PaletteState.slotNames
+
+                                                Item {
+                                                    id: swatchItem
+                                                    required property string modelData
+                                                    Layout.fillWidth: true
+                                                    height: 48
+
+                                                    readonly property bool isSelected: root.editingSlot === swatchItem.modelData
+                                                    readonly property bool isHovered: root.hoveredSlot === swatchItem.modelData
+                                                    readonly property color slotColor: root.editingPath ? PaletteState.colorFor(root.editingPath, swatchItem.modelData) : "#888888"
+
+                                                    Rectangle {
+                                                        id: swatchCircle
+                                                        anchors.centerIn: parent
+                                                        width: swatchItem.isHovered ? 42 : 36
+                                                        height: width
+                                                        radius: width / 2
+                                                        color: swatchItem.slotColor
+
+                                                        border.width: swatchItem.isSelected ? 2.5 : (swatchItem.isHovered ? 2 : 1)
+                                                        border.color: swatchItem.isSelected ? Theme.attention : (swatchItem.isHovered ? Theme.ink : Theme.pillBorder)
+
+                                                        Behavior on width { NumberAnimation { duration: 100 } }
+                                                        Behavior on border.color { ColorAnimation { duration: 100 } }
+
+                                                        Rectangle {
+                                                            visible: swatchItem.isSelected
+                                                            anchors.centerIn: parent
+                                                            width: 8
+                                                            height: 8
+                                                            radius: 4
+                                                            color: Theme.attention
+                                                            border.width: 1
+                                                            border.color: Theme.ink
+                                                        }
+                                                    }
+
+                                                    MouseArea {
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onEntered: root.hoveredSlot = swatchItem.modelData
+                                                        onExited: {
+                                                            if (root.hoveredSlot === swatchItem.modelData) {
+                                                                root.hoveredSlot = ""
+                                                            }
+                                                        }
+                                                        onClicked: {
+                                                            root.editingSlot = swatchItem.modelData
+                                                            hexInput.text = ""
+                                                            hexInput.forceActiveFocus()
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.pillBorder }
+
+                                        // ── 4. Hex Value Input & Apply Row (No static chip colors!) ──
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            height: 48
+                                            radius: 8
+                                            color: Theme.qsBgAlt
+                                            border.width: 1
+                                            border.color: Theme.pillBorder
+
+                                            RowLayout {
+                                                anchors.fill: parent
+                                                anchors.leftMargin: 12
+                                                anchors.rightMargin: 12
+                                                spacing: 10
+
+                                                Text {
+                                                    text: "Hex:"
+                                                    font.family: Theme.fontText
+                                                    font.pixelSize: 12
+                                                    font.bold: true
+                                                    color: Theme.qsText
+                                                }
+
+                                                Rectangle {
+                                                    id: hexBox
+                                                    Layout.fillWidth: true
+                                                    height: 30
+                                                    radius: 6
+                                                    color: Theme.qsBg
+                                                    border.width: hexInput.activeFocus ? 2 : 1
+                                                    border.color: hexInput.activeFocus ? Theme.attention : Theme.pillBorder
+
+                                                    TextInput {
+                                                        id: hexInput
+                                                        anchors.fill: parent
+                                                        anchors.leftMargin: 8
+                                                        anchors.rightMargin: 8
+                                                        verticalAlignment: TextInput.AlignVCenter
+                                                        color: Theme.qsText
+                                                        font.family: Theme.fontText
+                                                        font.pixelSize: 12
+                                                        font.bold: true
+                                                        selectionColor: Theme.attention
+                                                        selectedTextColor: Theme.ink
+                                                        clip: true
+
+                                                        property string normalized: {
+                                                            let t = text.trim()
+                                                            if (t === "") return ""
+                                                            return t.charAt(0) === "#" ? t : "#" + t
+                                                        }
+
+                                                        readonly property bool valid: PaletteState.isValidHex(normalized)
+
+                                                        function applyHex() {
+                                                            if (!valid || !root.editingPath || !root.editingSlot) return
+                                                            PaletteState.assignColor(root.editingPath, root.editingSlot, normalized)
+                                                            text = ""
+                                                        }
+
+                                                        onAccepted: applyHex()
+                                                    }
+
+                                                    Text {
+                                                        visible: hexInput.text === "" && !hexInput.activeFocus
+                                                        anchors.fill: parent
+                                                        anchors.leftMargin: 8
+                                                        verticalAlignment: Text.AlignVCenter
+                                                        text: root.editingPath && root.editingSlot ? PaletteState.colorFor(root.editingPath, root.editingSlot).toString().toUpperCase() : "#RRGGBB"
+                                                        font.family: Theme.fontText
+                                                        font.pixelSize: 11
+                                                        color: Theme.qsTextMuted
+                                                    }
+                                                }
+
+                                                // Live preview circle
+                                                Rectangle {
+                                                    width: 28
+                                                    height: 28
+                                                    radius: 14
+                                                    color: hexInput.valid ? hexInput.normalized : (root.editingPath && root.editingSlot ? PaletteState.colorFor(root.editingPath, root.editingSlot) : "transparent")
+                                                    border.width: 1.5
+                                                    border.color: hexInput.valid ? Theme.attention : Theme.pillBorder
+                                                }
+
+                                                // Apply Button
+                                                Rectangle {
+                                                    implicitHeight: 30
+                                                    implicitWidth: applyButtonRow.implicitWidth + 14
+                                                    radius: 15
+                                                    color: hexInput.valid ? Theme.attention : Theme.primary
+                                                    opacity: hexInput.valid ? 1.0 : 0.4
+
+                                                    RowLayout {
+                                                        id: applyButtonRow
+                                                        anchors.centerIn: parent
+                                                        spacing: 4
+
+                                                        Text {
+                                                            text: "check"
+                                                            font.family: Theme.fontIcons
+                                                            font.pixelSize: 14
+                                                            color: hexInput.valid ? Theme.ink : Theme.qsTextMuted
+                                                        }
+
+                                                        Text {
+                                                            text: "Apply"
+                                                            font.family: Theme.fontText
+                                                            font.pixelSize: 11
+                                                            font.bold: true
+                                                            color: hexInput.valid ? Theme.ink : Theme.qsTextMuted
+                                                        }
+                                                    }
+
+                                                    MouseArea {
+                                                        anchors.fill: parent
+                                                        cursorShape: hexInput.valid ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                                        onClicked: hexInput.applyHex()
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // ── 5. Full Palette Strip ──
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            height: 8
+                                            radius: 4
+                                            clip: true
+                                            border.width: 1
+                                            border.color: Theme.pillBorder
+
+                                            RowLayout {
+                                                anchors.fill: parent
+                                                spacing: 0
+
+                                                Repeater {
+                                                    model: PaletteState.slotNames
+                                                    Rectangle {
+                                                        required property string modelData
+                                                        Layout.fillWidth: true
+                                                        Layout.fillHeight: true
+                                                        color: root.editingPath ? PaletteState.colorFor(root.editingPath, modelData) : "#333333"
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Item { Layout.fillHeight: true }
                                     }
                                 }
 
