@@ -49,7 +49,7 @@ Pill {
 
     // Window geometry — the card FILLS the window (no dead click zones around it).
     readonly property int hubW: 630
-    readonly property int hubH: 450
+    readonly property int hubH: 360
 
     // ─── Apple Dynamic Island Morphing Engine ──────────────────────────────────
     property real islandProgress: 0.0
@@ -74,12 +74,45 @@ Pill {
         : root.hubTopGap
 
     readonly property real islandRadius: root.animStyle === "island"
-        ? Math.max(14, (root.pillH / 2) + (16 - (root.pillH / 2)) * Math.min(1.0, Math.max(0.0, root.islandProgress)))
-        : 14
+        ? Math.max(14, (root.pillH / 2) + (24 - (root.pillH / 2)) * Math.min(1.0, Math.max(0.0, root.islandProgress)))
+        : 24
 
     // ─── Tabs ───────────────────────────────────────────────────────────────────
-    // The hub opens on the calendar face by default; "settings" is the other tab.
-    property string currentTab: "calendar"   // "settings" | "calendar"
+    // The hub ALWAYS opens on the calendar tab by default.
+    property string currentTab: "calendar"
+
+    // ─── Wallpaper Carousel State & Navigation ─────────────────────────────────
+    property int wallIndex: 0
+
+    function currentWallIdx() {
+        if (!root.wallpapers || root.wallpapers.length === 0) return 0
+        let cur = WallpaperState.current
+        let idx = root.wallpapers.indexOf(cur)
+        return idx >= 0 ? idx : 0
+    }
+
+    function selectPrevWallpaper() {
+        if (!root.wallpapers || root.wallpapers.length === 0) return
+        let count = root.wallpapers.length
+        let nextIdx = (root.wallIndex - 1 + count) % count
+        root.wallIndex = nextIdx
+        WallpaperState.setWallpaper(root.wallpapers[nextIdx])
+    }
+
+    function selectNextWallpaper() {
+        if (!root.wallpapers || root.wallpapers.length === 0) return
+        let count = root.wallpapers.length
+        let nextIdx = (root.wallIndex + 1) % count
+        root.wallIndex = nextIdx
+        WallpaperState.setWallpaper(root.wallpapers[nextIdx])
+    }
+
+    Connections {
+        target: WallpaperState
+        function onCurrentChanged() {
+            root.wallIndex = root.currentWallIdx()
+        }
+    }
 
     // ─── Settings sub-pages (opened by the toggle ">" chevrons) ──────────────────
     // "main" = sliders/toggles · "wifi"/"bluetooth" = the detail lists.
@@ -262,6 +295,7 @@ Pill {
                     if (line.trim() !== "") list.push(line.trim())
                 }
                 root.wallpapers = list
+                root.wallIndex = root.currentWallIdx()
                 PaletteState.ensureRegistered(list)
             }
         }
@@ -366,6 +400,10 @@ Pill {
         closing = false
         stopAllAnims()
         prepareFace()                   // undo whatever a previous close left behind
+        root.currentTab = "calendar"    // ALWAYS default to calendar on open
+        root.hubPage = "main"
+        root.themePage = "picker"
+        root.wallIndex = root.currentWallIdx()
         if (root.animStyle === "island") {
             root.contentOpacity = 0.0
             root.islandProgress = 0.0
@@ -373,7 +411,6 @@ Pill {
         popup.visible = true
         grab.active = true              // arm click-outside-to-close
         root.refreshData()
-        root.hubPage = "main"           // always reopen on the main settings page
         openDelay.restart()             // let the surface map BEFORE animating
     }
 
@@ -382,6 +419,9 @@ Pill {
         openDelay.stop()                // don't let a pending open animation fire
         if (closing) return             // already animating out — don't restart it
         closing = true
+        root.currentTab = "calendar"    // reset back to calendar on close
+        root.hubPage = "main"
+        root.themePage = "picker"
         stopAllAnims()
         startClose()                    // run the close animation…
         closeDelay.interval = closeMs() + 80   // …then hide AFTER it plays
@@ -436,7 +476,11 @@ Pill {
         // (never on a stale wifi/bluetooth sub-page).
         if (tab === "settings") root.hubPage = "main"
         // Opening the theme tab refreshes the wallpaper list.
-        if (tab === "theme") root.refreshWallpapers()
+        if (tab === "theme") {
+            root.themePage = "picker"
+            root.refreshWallpapers()
+            root.wallIndex = root.currentWallIdx()
+        }
         // The calendar shows weather, so make sure it's freshly fetched.
         if (tab === "calendar" && !weatherProc.running) weatherProc.running = true
     }
@@ -449,7 +493,6 @@ Pill {
             case "curtain": animCurtainOpen.start(); break
             case "stagger":
                 // Pre-hide the chrome + content so each stagger step is visible.
-                headerRow.opacity = 0;      headerLift.y = 10
                 tabBarRow.opacity = 0;      tabBarLift.y = 8
                 dividerBar.opacity = 0;     dividerLift.y = 6
                 contentStack.opacity = 0;   contentLift.y = 10
@@ -487,7 +530,6 @@ Pill {
     // Forces every content element back to fully-visible so styles that don't
     // care about them aren't affected by whatever a previous stagger close left.
     function resetContent() {
-        headerRow.opacity = 1;      headerLift.y = 0
         tabBarRow.opacity = 1;      tabBarLift.y = 0
         dividerBar.opacity = 0.35;  dividerLift.y = 0
         contentStack.opacity = 1;   contentLift.y = 0
@@ -565,6 +607,9 @@ Pill {
             grab.active = false
             stopAllAnims()
             prepareFace()
+            root.currentTab = "calendar"
+            root.hubPage = "main"
+            root.themePage = "picker"
             root.contentOpacity = 1.0
             root.islandProgress = 0.0
         }
@@ -694,8 +739,6 @@ Pill {
                             NumberAnimation { target: faceScale;  property: "yScale";  from: 0.97; to: 1; duration: 130; easing.type: Easing.OutQuad }
                         }
                         ParallelAnimation {
-                            NumberAnimation { target: headerRow;  property: "opacity"; from: 0; to: 1; duration: 150; easing.type: Easing.OutQuad }
-                            NumberAnimation { target: headerLift; property: "y";       from: 10; to: 0; duration: 150; easing.type: Easing.OutQuad }
                             NumberAnimation { target: tabBarRow;  property: "opacity"; from: 0; to: 1; duration: 150; easing.type: Easing.OutQuad }
                             NumberAnimation { target: tabBarLift; property: "y";       from: 8; to: 0; duration: 150; easing.type: Easing.OutQuad }
                         }
@@ -755,8 +798,6 @@ Pill {
                         }
                         PauseAnimation { duration: 40 }
                         ParallelAnimation {
-                            NumberAnimation { target: headerRow;   property: "opacity"; to: 0;    duration: 120; easing.type: Easing.InQuad }
-                            NumberAnimation { target: headerLift;  property: "y";       to: 10;   duration: 130; easing.type: Easing.InQuad }
                             NumberAnimation { target: tabBarRow;   property: "opacity"; to: 0;    duration: 120; easing.type: Easing.InQuad }
                             NumberAnimation { target: tabBarLift;  property: "y";       to: 8;    duration: 130; easing.type: Easing.InQuad }
                             NumberAnimation { target: face;        property: "opacity"; to: 0;    duration: 140; easing.type: Easing.InQuad }
@@ -842,83 +883,14 @@ Pill {
                         }
 
                         // =============================================================
-                        //  THE CARD CONTENT  (header, tab bar, and the two tab views)
+                        //  THE CARD CONTENT  (browser-style top tabs & views)
                         // =============================================================
                         ColumnLayout {
                             anchors.fill: parent
-                            anchors.margins: 14
-                            spacing: 10
+                            anchors.margins: 12
+                            spacing: 8
 
-                        // ─── HEADER: icon capsule | time + date | collapse ───────
-                        RowLayout {
-                            id: headerRow
-                            opacity: 1
-                            transform: Translate { id: headerLift; y: 0 }
-                            Layout.fillWidth: true
-                            spacing: 10
-
-                            Rectangle {
-                                width: 32
-                                height: 32
-                                radius: 16
-                                color: Theme.plum
-
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: "nest_clock_farsight_analog"
-                                    font.family: Theme.fontIcons
-                                    font.pixelSize: 16
-                                    color: Theme.ink
-                                    leftPadding: 2
-                                }
-                            }
-
-                            ColumnLayout {
-                                spacing: 0
-                                Layout.alignment: Qt.AlignVCenter
-
-                                Text {
-                                    text: Qt.formatDateTime(clock.date, "hh:mm AP")
-                                    font.family: Theme.fontText
-                                    font.pixelSize: 18
-                                    font.bold: true
-                                    color: Theme.qsText
-                                }
-                                Text {
-                                    text: Qt.formatDate(clock.date, "dddd, MMMM d")
-                                    font.family: Theme.fontText
-                                    font.pixelSize: 11
-                                    color: Theme.qsTextMuted
-                                }
-                            }
-
-                            Item { Layout.fillWidth: true }
-
-                            // Collapse button (also collapses the pill's state)
-                            Rectangle {
-                                width: 30
-                                height: 30
-                                radius: 15
-                                color: Theme.qsBgAlt
-
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: "keyboard_arrow_up"
-                                    font.family: Theme.fontIcons
-                                    font.pixelSize: 16
-                                    color: Theme.qsText
-                                    leftPadding: 1
-                                }
-
-                                MouseArea {
-                                    anchors.fill: parent
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: root.collapse()
-                                }
-                            }
-                        }
-
-                        // ─── TAB BAR: tiny capsule "pips", like the workspace pips ──
+                        // ─── BROWSER-STYLE TOP TABS: Calendar | Theme | Settings ─────
                         RowLayout {
                             id: tabBarRow
                             opacity: 1
@@ -926,19 +898,19 @@ Pill {
                             Layout.fillWidth: true
                             spacing: 8
 
-                            // ── Calendar tab pip ──
+                            // ── Calendar tab ──
                             Rectangle {
-                                height: 22
+                                height: 26
                                 implicitWidth: tabCalIcon.width + tabCalLabel.width
                                 color: "transparent"
 
                                 Rectangle {
                                     id: tabCalIcon
-                                    width: 22
+                                    width: 26
                                     height: parent.height
                                     anchors.left: parent.left
                                     anchors.verticalCenter: parent.verticalCenter
-                                    color: Theme.plum
+                                    color: root.currentTab === "calendar" ? Theme.attention : Theme.plum
                                     topLeftRadius: height / 2
                                     bottomLeftRadius: height / 2
                                     topRightRadius: 0
@@ -948,8 +920,8 @@ Pill {
                                         anchors.centerIn: parent
                                         text: "calendar_month"
                                         font.family: Theme.fontIcons
-                                        font.pixelSize: 12
-                                        color: Theme.ink
+                                        font.pixelSize: 13
+                                        color: root.currentTab === "calendar" ? Theme.qsOnAccent : Theme.ink
                                         leftPadding: 1
                                     }
                                 }
@@ -971,9 +943,9 @@ Pill {
                                         anchors.centerIn: parent
                                         text: "Calendar"
                                         font.family: Theme.fontText
-                                        font.pixelSize: 11
+                                        font.pixelSize: 12
                                         font.bold: true
-                                        color: Theme.ink
+                                        color: root.currentTab === "calendar" ? Theme.qsOnAccent : Theme.ink
                                     }
                                 }
 
@@ -984,19 +956,19 @@ Pill {
                                 }
                             }
 
-                            // ── Theme tab pip ──
+                            // ── Theme tab ──
                             Rectangle {
-                                height: 22
+                                height: 26
                                 implicitWidth: tabThemeIcon.width + tabThemeLabel.width
                                 color: "transparent"
 
                                 Rectangle {
                                     id: tabThemeIcon
-                                    width: 22
+                                    width: 26
                                     height: parent.height
                                     anchors.left: parent.left
                                     anchors.verticalCenter: parent.verticalCenter
-                                    color: Theme.plum
+                                    color: root.currentTab === "theme" ? Theme.attention : Theme.plum
                                     topLeftRadius: height / 2
                                     bottomLeftRadius: height / 2
                                     topRightRadius: 0
@@ -1006,8 +978,8 @@ Pill {
                                         anchors.centerIn: parent
                                         text: "palette"
                                         font.family: Theme.fontIcons
-                                        font.pixelSize: 12
-                                        color: Theme.ink
+                                        font.pixelSize: 13
+                                        color: root.currentTab === "theme" ? Theme.qsOnAccent : Theme.ink
                                         leftPadding: 1
                                     }
                                 }
@@ -1029,9 +1001,9 @@ Pill {
                                         anchors.centerIn: parent
                                         text: "Theme"
                                         font.family: Theme.fontText
-                                        font.pixelSize: 11
+                                        font.pixelSize: 12
                                         font.bold: true
-                                        color: Theme.ink
+                                        color: root.currentTab === "theme" ? Theme.qsOnAccent : Theme.ink
                                     }
                                 }
 
@@ -1042,19 +1014,19 @@ Pill {
                                 }
                             }
 
-                            // ── Settings tab pip ──
+                            // ── Settings tab ──
                             Rectangle {
-                                height: 22
+                                height: 26
                                 implicitWidth: tabSettingsIcon.width + tabSettingsLabel.width
                                 color: "transparent"
 
                                 Rectangle {
                                     id: tabSettingsIcon
-                                    width: 22
+                                    width: 26
                                     height: parent.height
                                     anchors.left: parent.left
                                     anchors.verticalCenter: parent.verticalCenter
-                                    color: Theme.plum
+                                    color: root.currentTab === "settings" ? Theme.attention : Theme.plum
                                     topLeftRadius: height / 2
                                     bottomLeftRadius: height / 2
                                     topRightRadius: 0
@@ -1062,10 +1034,10 @@ Pill {
 
                                     Text {
                                         anchors.centerIn: parent
-                                        text: "settings"
+                                        text: "tune"
                                         font.family: Theme.fontIcons
-                                        font.pixelSize: 12
-                                        color: Theme.ink
+                                        font.pixelSize: 13
+                                        color: root.currentTab === "settings" ? Theme.qsOnAccent : Theme.ink
                                         leftPadding: 1
                                     }
                                 }
@@ -1087,9 +1059,9 @@ Pill {
                                         anchors.centerIn: parent
                                         text: "Settings"
                                         font.family: Theme.fontText
-                                        font.pixelSize: 11
+                                        font.pixelSize: 12
                                         font.bold: true
-                                        color: Theme.ink
+                                        color: root.currentTab === "settings" ? Theme.qsOnAccent : Theme.ink
                                     }
                                 }
 
@@ -1145,25 +1117,202 @@ Pill {
                                     ColumnLayout {
                                         id: settingsCol
                                         width: settingsFlick.width
-                                        spacing: 12
+                                        spacing: 10
 
-                                        // Power / Sleep / Lock actions
+                                        // ── Compact Action Row: Wi-Fi, BT, Lock, Sleep, Power ──
                                         RowLayout {
                                             Layout.fillWidth: true
-                                            spacing: 8
+                                            spacing: 6
 
+                                            // ── Wi-Fi Pill (Toggle + Subpage Arrow) ──
+                                            Rectangle {
+                                                Layout.fillWidth: true
+                                                implicitHeight: 34
+                                                color: "transparent"
+
+                                                Rectangle {
+                                                    id: wifiIconSeg
+                                                    width: wifiIconTxt.width + 12
+                                                    height: parent.height
+                                                    anchors.left: parent.left
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    color: root.wifiActive ? Theme.attention : Theme.plum
+                                                    topLeftRadius: height / 2
+                                                    bottomLeftRadius: height / 2
+                                                    topRightRadius: 0
+                                                    bottomRightRadius: 0
+
+                                                    Text {
+                                                        id: wifiIconTxt
+                                                        anchors.centerIn: parent
+                                                        text: "wifi"
+                                                        font.family: Theme.fontIcons
+                                                        font.pixelSize: 16
+                                                        color: root.wifiActive ? Theme.qsOnAccent : Theme.ink
+                                                        leftPadding: 3
+                                                    }
+
+                                                    MouseArea {
+                                                        anchors.fill: parent
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: {
+                                                            root.wifiActive = !root.wifiActive
+                                                            Quickshell.execDetached(["nmcli", "radio", "wifi", root.wifiActive ? "on" : "off"])
+                                                        }
+                                                    }
+                                                }
+
+                                                Rectangle {
+                                                    anchors.left: wifiIconSeg.right
+                                                    anchors.right: parent.right
+                                                    height: parent.height
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    color: root.wifiActive ? Theme.attention : Theme.primary
+                                                    topLeftRadius: 0
+                                                    bottomLeftRadius: 0
+                                                    topRightRadius: height / 2
+                                                    bottomRightRadius: height / 2
+
+                                                    RowLayout {
+                                                        anchors.fill: parent
+                                                        anchors.leftMargin: 6
+                                                        anchors.rightMargin: 6
+                                                        spacing: 2
+
+                                                        Text {
+                                                            text: "Wi-Fi"
+                                                            font.family: Theme.fontText
+                                                            font.pixelSize: 11
+                                                            font.bold: true
+                                                            color: root.wifiActive ? Theme.qsOnAccent : Theme.ink
+                                                            Layout.fillWidth: true
+                                                            elide: Text.ElideRight
+                                                            Layout.alignment: Qt.AlignVCenter
+                                                        }
+
+                                                        Text {
+                                                            text: "chevron_right"
+                                                            font.family: Theme.fontIcons
+                                                            font.pixelSize: 14
+                                                            color: root.wifiActive ? Theme.qsOnAccent : Theme.qsTextMuted
+                                                            Layout.alignment: Qt.AlignVCenter
+                                                        }
+                                                    }
+
+                                                    MouseArea {
+                                                        anchors.fill: parent
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: {
+                                                            root.hubPage = "wifi"
+                                                            root.refreshWifi()
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            // ── Bluetooth Pill (Toggle + Subpage Arrow) ──
+                                            Rectangle {
+                                                Layout.fillWidth: true
+                                                implicitHeight: 34
+                                                color: "transparent"
+
+                                                Rectangle {
+                                                    id: btIconSeg
+                                                    width: btIconTxt.width + 12
+                                                    height: parent.height
+                                                    anchors.left: parent.left
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    color: root.btActive ? Theme.attention : Theme.plum
+                                                    topLeftRadius: height / 2
+                                                    bottomLeftRadius: height / 2
+                                                    topRightRadius: 0
+                                                    bottomRightRadius: 0
+
+                                                    Text {
+                                                        id: btIconTxt
+                                                        anchors.centerIn: parent
+                                                        text: "bluetooth"
+                                                        font.family: Theme.fontIcons
+                                                        font.pixelSize: 16
+                                                        color: root.btActive ? Theme.qsOnAccent : Theme.ink
+                                                        leftPadding: 3
+                                                    }
+
+                                                    MouseArea {
+                                                        anchors.fill: parent
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: {
+                                                            root.btActive = !root.btActive
+                                                            Quickshell.execDetached(["bluetoothctl", "power", root.btActive ? "on" : "off"])
+                                                        }
+                                                    }
+                                                }
+
+                                                Rectangle {
+                                                    anchors.left: btIconSeg.right
+                                                    anchors.right: parent.right
+                                                    height: parent.height
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    color: root.btActive ? Theme.attention : Theme.primary
+                                                    topLeftRadius: 0
+                                                    bottomLeftRadius: 0
+                                                    topRightRadius: height / 2
+                                                    bottomRightRadius: height / 2
+
+                                                    RowLayout {
+                                                        anchors.fill: parent
+                                                        anchors.leftMargin: 6
+                                                        anchors.rightMargin: 6
+                                                        spacing: 2
+
+                                                        Text {
+                                                            text: "BT"
+                                                            font.family: Theme.fontText
+                                                            font.pixelSize: 11
+                                                            font.bold: true
+                                                            color: root.btActive ? Theme.qsOnAccent : Theme.ink
+                                                            Layout.fillWidth: true
+                                                            elide: Text.ElideRight
+                                                            Layout.alignment: Qt.AlignVCenter
+                                                        }
+
+                                                        Text {
+                                                            text: "chevron_right"
+                                                            font.family: Theme.fontIcons
+                                                            font.pixelSize: 14
+                                                            color: root.btActive ? Theme.qsOnAccent : Theme.qsTextMuted
+                                                            Layout.alignment: Qt.AlignVCenter
+                                                        }
+                                                    }
+
+                                                    MouseArea {
+                                                        anchors.fill: parent
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: {
+                                                            root.hubPage = "bluetooth"
+                                                            root.refreshBt()
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            // ── Lock Pill ──
                                             ActionPill {
                                                 Layout.fillWidth: true
                                                 icon: "lock"
                                                 label: "Lock"
                                                 onClicked: { root.collapse(); Quickshell.execDetached(["hyprlock"]) }
                                             }
+
+                                            // ── Sleep Pill ──
                                             ActionPill {
                                                 Layout.fillWidth: true
                                                 icon: "bedtime"
                                                 label: "Sleep"
                                                 onClicked: { root.collapse(); Quickshell.execDetached(["systemctl", "suspend"]) }
                                             }
+
+                                            // ── Power Pill ──
                                             ActionPill {
                                                 Layout.fillWidth: true
                                                 icon: "power_settings_new"
@@ -1175,12 +1324,12 @@ Pill {
 
                                         Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.pillBorder }
 
-                                        // Volume — BOOST slider: goes up to 150%.
+                                        // Volume — BOOST slider: goes up to 150%, no text percentage shown
                                         CustomSlider {
                                             icon: (root.sink && root.sink.audio && root.sink.audio.muted) ? "volume_off" : "volume_up"
                                             value: (root.sink && root.sink.audio) ? root.sink.audio.volume : 0.5
                                             maxValue: 1.5
-                                            displayText: (root.sink && root.sink.audio) ? Math.round(root.sink.audio.volume * 100) + "%" : "—"
+                                            displayText: ""
                                             onValueChangedByUser: newVal => {
                                                 if (root.sink && root.sink.audio) root.sink.audio.volume = newVal
                                             }
@@ -1190,6 +1339,7 @@ Pill {
                                         CustomSlider {
                                             icon: (root.source && root.source.audio && root.source.audio.muted) ? "mic_off" : "mic"
                                             value: (root.source && root.source.audio) ? root.source.audio.volume : 0.5
+                                            displayText: ""
                                             onValueChangedByUser: newVal => {
                                                 if (root.source && root.source.audio) root.source.audio.volume = newVal
                                             }
@@ -1199,55 +1349,11 @@ Pill {
                                         CustomSlider {
                                             icon: "brightness_6"
                                             value: root.brightnessVal
+                                            displayText: ""
                                             onValueChangedByUser: newVal => {
                                                 root.brightnessVal = newVal
                                                 let percent = Math.round(newVal * 100)
                                                 Quickshell.execDetached(["brightnessctl", "set", percent + "%"])
-                                            }
-                                        }
-
-                                        Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.pillBorder }
-
-                                        // Toggles grid (Wi-Fi + Bluetooth)
-                                        GridLayout {
-                                            Layout.fillWidth: true
-                                            columns: 2
-                                            columnSpacing: 10
-                                            rowSpacing: 10
-
-                                            QuickToggle {
-                                                icon: "wifi"
-                                                title: "Wi-Fi"
-                                                // Status: connected SSID when known, else On/Off.
-                                                status: root.wifiActive
-                                                        ? (root.wifiNetworks.length > 0 && root.wifiNetworks[0].active ? root.wifiNetworks[0].ssid : "On")
-                                                        : "Off"
-                                                active: root.wifiActive
-                                                onToggled: {
-                                                    root.wifiActive = !root.wifiActive
-                                                    Quickshell.execDetached(["nmcli", "radio", "wifi", root.wifiActive ? "on" : "off"])
-                                                }
-                                                // ">" chevron → full network list page.
-                                                onOpenDetails: {
-                                                    root.hubPage = "wifi"
-                                                    root.refreshWifi()
-                                                }
-                                            }
-
-                                            QuickToggle {
-                                                icon: "bluetooth"
-                                                title: "Bluetooth"
-                                                status: root.btActive ? (root.isScanning ? "Scanning..." : "On") : "Off"
-                                                active: root.btActive
-                                                onToggled: {
-                                                    root.btActive = !root.btActive
-                                                    Quickshell.execDetached(["bluetoothctl", "power", root.btActive ? "on" : "off"])
-                                                }
-                                                // ">" chevron → device list page.
-                                                onOpenDetails: {
-                                                    root.hubPage = "bluetooth"
-                                                    root.refreshBt()
-                                                }
                                             }
                                         }
                                     }
@@ -2184,12 +2290,12 @@ Pill {
                                         Layout.fillWidth: true
                                         Layout.preferredWidth: 300
                                         Layout.fillHeight: true
-                                        spacing: 8
+                                        spacing: 6
 
                                         Text {
                                             text: Qt.formatDateTime(clock.date, "hh:mm")
                                             font.family: Theme.fontText
-                                            font.pixelSize: 46
+                                            font.pixelSize: 36
                                             font.bold: true
                                             color: Theme.qsText
                                             Layout.alignment: Qt.AlignHCenter
@@ -2197,7 +2303,7 @@ Pill {
                                         Text {
                                             text: Qt.formatDate(clock.date, "EEEE, MMMM d")
                                             font.family: Theme.fontText
-                                            font.pixelSize: 13
+                                            font.pixelSize: 12
                                             color: Theme.qsTextMuted
                                             Layout.alignment: Qt.AlignHCenter
                                         }
@@ -2206,8 +2312,8 @@ Pill {
                                             Layout.fillWidth: true
                                             implicitHeight: 1
                                             color: Theme.pillBorder
-                                            Layout.topMargin: 6
-                                            Layout.bottomMargin: 6
+                                            Layout.topMargin: 4
+                                            Layout.bottomMargin: 4
                                         }
 
                                         Text {
@@ -2222,7 +2328,7 @@ Pill {
                                         Text {
                                             text: root.weatherOK ? root.weatherTemp : "—"
                                             font.family: Theme.fontText
-                                            font.pixelSize: 40
+                                            font.pixelSize: 32
                                             font.bold: true
                                             color: Theme.attention
                                             Layout.alignment: Qt.AlignHCenter

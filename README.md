@@ -35,10 +35,12 @@ launches `quickshell`). After editing ANY `.qml` file you must reload:
     Workspaces.qml      Workspace pips + hyprexpo overview button.
     Volume.qml          Audio volume pill (click = mute, scroll = level).
     Dictation.qml       Speech-to-text (hyprwhspr) mic pill.
-    Hub.qml             Clock pill that expands into a floating 630×450 window. The
-                        single widget that will host ALL future windows. Ships with
-                        two tabs: **Settings** (QuickSettings-format controls) and
-                        **Calendar/Weather** (Tabriz weather + month calendar).
+    Hub.qml             Clock pill that expands into a floating 630×360 pill-shaped
+                        window. Reclaims top screen space with a browser-style top tab bar
+                        (Calendar, Theme, Settings). Ships with:
+                        - **Calendar**: Clock, Tabriz weather, and interactive month calendar. Always the default tab on open.
+                        - **Theme**: Wallpaper coverflow carousel with peeking corner cards, left/right navigation arrows, and pull-to-drag.
+                        - **Settings**: Inline action row (Wi-Fi, Bluetooth, Lock, Sleep, Power) and clean volume/mic/brightness sliders (volume boost to 150% without percentage text).
 
     QuickSettings.qml   The whole dropdown PanelWindow (3 sub-views).
     README.md           This file. Ignored by quickshell.
@@ -55,7 +57,7 @@ launches `quickshell`). After editing ANY `.qml` file you must reload:
 | Workspace count             | `Workspaces.qml` — the Repeater `model: 5` |
 | Which buttons on the bar    | `shell.qml` — the three island RowLayouts  |
 | The expanding center widget | `Hub.qml` — clock pill + its floating window |
-| Which tab is open           | `Hub.qml` — `currentTab`: "settings" \| "calendar" |
+| Which tab is open           | `Hub.qml` — `currentTab`: "calendar" (default) \| "theme" \| "settings" |
 | Volume boost ceiling        | `Hub.qml` — volume `CustomSlider` `maxValue: 1.5` (=150%) |
 | The expand animation style  | `Hub.qml` — `animStyle`: "island" (Dynamic Island) \| "drop" \| "pop" \| "curtain" \| "stagger" \| "swing" |
 | QuickSettings width         | `QuickSettings.qml` — implicitWidth        |
