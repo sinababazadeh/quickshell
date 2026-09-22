@@ -406,6 +406,7 @@ Pill {
     iconColor: root.bannerActive ? Theme.qsOnAccent : Theme.ink
     labelBg: root.open ? Theme.indigo : Theme.primary
     textColor: root.bannerActive ? Theme.attention : Theme.ink
+    maxLabelWidth: root.bannerActive ? 220 : 150
 
     // ─── Click = expand / collapse ───────────────────────────────────────────────
     MouseArea {
@@ -447,6 +448,8 @@ Pill {
     }
 
     function expand() {
+        root.bannerActive = false
+        bannerTimer.stop()
         closeDelay.stop()               // cancel a close that's mid-flight
         openDelay.stop()
         closing = false
@@ -910,6 +913,8 @@ Pill {
 
                             Text {
                                 anchors.centerIn: parent
+                                width: Math.max(0, parent.width - 16)
+                                elide: Text.ElideRight
                                 text: root.label
                                 color: root.textColor
                                 font.family: Theme.fontText
@@ -1097,7 +1102,7 @@ Pill {
                                 Rectangle {
                                     id: tabNotifLabel
                                     height: parent.height
-                                    width: tabNotifTxt.implicitWidth + (NotificationState.totalCount > 0 ? notifBadge.width + 16 : 14)
+                                    width: tabNotifRow.implicitWidth + 14
                                     anchors.left: tabNotifIcon.right
                                     anchors.verticalCenter: parent.verticalCenter
                                     color: root.currentTab === "notifications" ? Theme.attention : Theme.primary
@@ -1107,6 +1112,7 @@ Pill {
                                     bottomRightRadius: height / 2
 
                                     RowLayout {
+                                        id: tabNotifRow
                                         anchors.centerIn: parent
                                         spacing: 4
 
@@ -1122,9 +1128,9 @@ Pill {
                                         Rectangle {
                                             id: notifBadge
                                             visible: NotificationState.totalCount > 0
-                                            height: 14
-                                            width: Math.max(14, notifBadgeTxt.implicitWidth + 8)
-                                            radius: height / 2
+                                            implicitHeight: 14
+                                            implicitWidth: notifBadgeTxt.implicitWidth + 8
+                                            radius: 7
                                             color: root.currentTab === "notifications" ? Theme.qsBg : Theme.attention
 
                                             Text {
@@ -2713,368 +2719,370 @@ Pill {
                                         Layout.fillHeight: true
                                     }
                                 }
-                            }
 
-                            // =====================================================
-                            //  VIEW 5 — NOTIFICATIONS (Grouped by Application)
-                            // =====================================================
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                Layout.fillHeight: true
-                                spacing: 8
-
-                                // ── Top Header Row ──
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 8
-
-                                    Text {
-                                        text: "Unattended Notifications"
-                                        font.family: Theme.fontText
-                                        font.pixelSize: 13
-                                        font.bold: true
-                                        color: Theme.qsText
-                                    }
-
-                                    Rectangle {
-                                        visible: NotificationState.totalCount > 0
-                                        radius: 8
-                                        color: Theme.attention
-                                        implicitHeight: 18
-                                        implicitWidth: totalBadgeTxt.implicitWidth + 10
-
-                                        Text {
-                                            id: totalBadgeTxt
-                                            anchors.centerIn: parent
-                                            text: NotificationState.totalCount + (NotificationState.totalCount === 1 ? " alert" : " alerts")
-                                            font.family: Theme.fontText
-                                            font.pixelSize: 9
-                                            font.bold: true
-                                            color: Theme.qsOnAccent
-                                        }
-                                    }
-
-                                    Item { Layout.fillWidth: true }
-
-                                    // Quick test simulation button
-                                    Rectangle {
-                                        implicitHeight: 22
-                                        implicitWidth: testBtnRow.implicitWidth + 14
-                                        radius: 11
-                                        color: Theme.qsBgAlt
-                                        border.width: 1
-                                        border.color: Theme.pillBorder
-
-                                        RowLayout {
-                                            id: testBtnRow
-                                            anchors.centerIn: parent
-                                            spacing: 4
-                                            Text {
-                                                text: "terminal"
-                                                font.family: Theme.fontIcons
-                                                font.pixelSize: 11
-                                                color: Theme.attention
-                                            }
-                                            Text {
-                                                text: "Simulate Kitty"
-                                                font.family: Theme.fontText
-                                                font.pixelSize: 10
-                                                font.bold: true
-                                                color: Theme.qsText
-                                            }
-                                        }
-
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: {
-                                                NotificationState.sendTestNotification("kitty", "Command finished", "Build completed with 0 errors in 1.4s")
-                                            }
-                                        }
-                                    }
-
-                                    // Clear all button
-                                    Rectangle {
-                                        visible: NotificationState.groups.length > 0
-                                        implicitHeight: 22
-                                        implicitWidth: clearAllRow.implicitWidth + 14
-                                        radius: 11
-                                        color: Theme.qsBgAlt
-                                        border.width: 1
-                                        border.color: Theme.pillBorder
-
-                                        RowLayout {
-                                            id: clearAllRow
-                                            anchors.centerIn: parent
-                                            spacing: 4
-                                            Text {
-                                                text: "delete_sweep"
-                                                font.family: Theme.fontIcons
-                                                font.pixelSize: 12
-                                                color: Theme.attention
-                                            }
-                                            Text {
-                                                text: "Clear all"
-                                                font.family: Theme.fontText
-                                                font.pixelSize: 10
-                                                font.bold: true
-                                                color: Theme.attention
-                                            }
-                                        }
-
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: NotificationState.clearAll()
-                                        }
-                                    }
-                                }
-
-                                Rectangle {
-                                    Layout.fillWidth: true
-                                    implicitHeight: 1
-                                    color: Theme.pillBorder
-                                }
-
-                                // ── Empty State ──
-                                Item {
-                                    visible: NotificationState.groups.length === 0
+                                // =====================================================
+                                //  VIEW 5 — NOTIFICATIONS (Grouped by Application)
+                                // =====================================================
+                                ColumnLayout {
                                     Layout.fillWidth: true
                                     Layout.fillHeight: true
+                                    spacing: 6
 
-                                    ColumnLayout {
-                                        anchors.centerIn: parent
-                                        spacing: 4
-
-                                        Text {
-                                            text: "notifications_paused"
-                                            font.family: Theme.fontIcons
-                                            font.pixelSize: 32
-                                            color: Theme.qsTextMuted
-                                            Layout.alignment: Qt.AlignHCenter
-                                        }
+                                    // ── Top Header Row ──
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 8
+                                        implicitHeight: 22
 
                                         Text {
-                                            text: "No unattended notifications"
+                                            text: "Notifications"
                                             font.family: Theme.fontText
                                             font.pixelSize: 12
                                             font.bold: true
                                             color: Theme.qsText
-                                            Layout.alignment: Qt.AlignHCenter
                                         }
 
-                                        Text {
-                                            text: "Alerts will automatically be grouped by application"
-                                            font.family: Theme.fontText
-                                            font.pixelSize: 10
-                                            color: Theme.qsTextMuted
-                                            Layout.alignment: Qt.AlignHCenter
+                                        Rectangle {
+                                            visible: NotificationState.totalCount > 0
+                                            radius: 7
+                                            color: Theme.attention
+                                            implicitHeight: 16
+                                            implicitWidth: totalBadgeTxt.implicitWidth + 8
+
+                                            Text {
+                                                id: totalBadgeTxt
+                                                anchors.centerIn: parent
+                                                text: NotificationState.totalCount + (NotificationState.totalCount === 1 ? " alert" : " alerts")
+                                                font.family: Theme.fontText
+                                                font.pixelSize: 9
+                                                font.bold: true
+                                                color: Theme.qsOnAccent
+                                            }
+                                        }
+
+                                        Item { Layout.fillWidth: true }
+
+                                        // Quick test simulation button
+                                        Rectangle {
+                                            implicitHeight: 20
+                                            implicitWidth: testBtnRow.implicitWidth + 12
+                                            radius: 10
+                                            color: Theme.qsBgAlt
+                                            border.width: 1
+                                            border.color: Theme.pillBorder
+
+                                            RowLayout {
+                                                id: testBtnRow
+                                                anchors.centerIn: parent
+                                                spacing: 4
+                                                Text {
+                                                    text: "terminal"
+                                                    font.family: Theme.fontIcons
+                                                    font.pixelSize: 11
+                                                    color: Theme.attention
+                                                }
+                                                Text {
+                                                    text: "Simulate Kitty"
+                                                    font.family: Theme.fontText
+                                                    font.pixelSize: 9
+                                                    font.bold: true
+                                                    color: Theme.qsText
+                                                }
+                                            }
+
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: {
+                                                    NotificationState.sendTestNotification("kitty", "Command finished", "Build completed with 0 errors in 1.4s")
+                                                }
+                                            }
+                                        }
+
+                                        // Clear all button
+                                        Rectangle {
+                                            visible: NotificationState.groups.length > 0
+                                            implicitHeight: 20
+                                            implicitWidth: clearAllRow.implicitWidth + 12
+                                            radius: 10
+                                            color: Theme.qsBgAlt
+                                            border.width: 1
+                                            border.color: Theme.pillBorder
+
+                                            RowLayout {
+                                                id: clearAllRow
+                                                anchors.centerIn: parent
+                                                spacing: 4
+                                                Text {
+                                                    text: "delete_sweep"
+                                                    font.family: Theme.fontIcons
+                                                    font.pixelSize: 11
+                                                    color: Theme.attention
+                                                }
+                                                Text {
+                                                    text: "Clear all"
+                                                    font.family: Theme.fontText
+                                                    font.pixelSize: 9
+                                                    font.bold: true
+                                                    color: Theme.attention
+                                                }
+                                            }
+
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: NotificationState.clearAll()
+                                            }
                                         }
                                     }
-                                }
 
-                                // ── Grouped Notifications List ──
-                                ListView {
-                                    visible: NotificationState.groups.length > 0
-                                    Layout.fillWidth: true
-                                    Layout.fillHeight: true
-                                    clip: true
-                                    spacing: 6
-                                    boundsBehavior: Flickable.StopAtBounds
-                                    model: NotificationState.groups
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        implicitHeight: 1
+                                        color: Theme.pillBorder
+                                        opacity: 0.5
+                                    }
 
-                                    delegate: Rectangle {
-                                        id: groupCard
-                                        required property var modelData
-                                        readonly property var group: modelData
-
-                                        width: ListView.view.width
-                                        implicitHeight: cardCol.implicitHeight + 12
-                                        radius: 8
-                                        color: Theme.qsBgAlt
-                                        border.width: 1
-                                        border.color: Theme.pillBorder
+                                    // ── Empty State ──
+                                    Item {
+                                        visible: NotificationState.groups.length === 0
+                                        Layout.fillWidth: true
+                                        Layout.fillHeight: true
 
                                         ColumnLayout {
-                                            id: cardCol
-                                            anchors.fill: parent
-                                            anchors.margins: 7
+                                            anchors.centerIn: parent
                                             spacing: 4
 
-                                            // App header row
-                                            RowLayout {
-                                                Layout.fillWidth: true
-                                                spacing: 6
-
-                                                // App icon pill
-                                                Rectangle {
-                                                    width: 22
-                                                    height: 22
-                                                    radius: 11
-                                                    color: Theme.plum
-
-                                                    Text {
-                                                        anchors.centerIn: parent
-                                                        text: groupCard.group.appIcon || "notifications"
-                                                        font.family: Theme.fontIcons
-                                                        font.pixelSize: 13
-                                                        color: Theme.ink
-                                                    }
-                                                }
-
-                                                // App Name
-                                                Text {
-                                                    text: groupCard.group.appName
-                                                    font.family: Theme.fontText
-                                                    font.pixelSize: 12
-                                                    font.bold: true
-                                                    color: Theme.qsText
-                                                }
-
-                                                // Distinct group count badge (e.g. "× 10" or "10")
-                                                Rectangle {
-                                                    radius: 8
-                                                    color: Theme.attention
-                                                    implicitHeight: 16
-                                                    implicitWidth: countBadgeTxt.implicitWidth + 10
-
-                                                    Text {
-                                                        id: countBadgeTxt
-                                                        anchors.centerIn: parent
-                                                        text: groupCard.group.count > 1 ? ("× " + groupCard.group.count) : "1"
-                                                        font.family: Theme.fontText
-                                                        font.pixelSize: 9
-                                                        font.bold: true
-                                                        color: Theme.qsOnAccent
-                                                    }
-                                                }
-
-                                                Item { Layout.fillWidth: true }
-
-                                                // Timestamp of latest notification
-                                                Text {
-                                                    text: groupCard.group.latestTime || ""
-                                                    font.family: Theme.fontText
-                                                    font.pixelSize: 10
-                                                    color: Theme.qsTextMuted
-                                                }
-
-                                                // Expand/collapse accordion button (if count > 1)
-                                                Rectangle {
-                                                    visible: groupCard.group.count > 1
-                                                    width: 20
-                                                    height: 20
-                                                    radius: 10
-                                                    color: "transparent"
-
-                                                    Text {
-                                                        anchors.centerIn: parent
-                                                        text: groupCard.group.expanded ? "expand_less" : "expand_more"
-                                                        font.family: Theme.fontIcons
-                                                        font.pixelSize: 15
-                                                        color: Theme.qsTextMuted
-                                                    }
-
-                                                    MouseArea {
-                                                        anchors.fill: parent
-                                                        cursorShape: Qt.PointingHandCursor
-                                                        onClicked: NotificationState.toggleGroupExpanded(groupCard.group.appName)
-                                                    }
-                                                }
-
-                                                // Dismiss this application's notifications
-                                                Rectangle {
-                                                    width: 20
-                                                    height: 20
-                                                    radius: 10
-                                                    color: "transparent"
-
-                                                    Text {
-                                                        anchors.centerIn: parent
-                                                        text: "close"
-                                                        font.family: Theme.fontIcons
-                                                        font.pixelSize: 13
-                                                        color: Theme.qsTextMuted
-                                                    }
-
-                                                    MouseArea {
-                                                        anchors.fill: parent
-                                                        cursorShape: Qt.PointingHandCursor
-                                                        onClicked: NotificationState.clearGroup(groupCard.group.appName)
-                                                    }
-                                                }
+                                            Text {
+                                                text: "notifications_paused"
+                                                font.family: Theme.fontIcons
+                                                font.pixelSize: 26
+                                                color: Theme.qsTextMuted
+                                                Layout.alignment: Qt.AlignHCenter
                                             }
 
-                                            // Latest notification message
-                                            ColumnLayout {
-                                                Layout.fillWidth: true
-                                                spacing: 1
-
-                                                Text {
-                                                    visible: (groupCard.group.latestSummary || "") !== ""
-                                                    text: groupCard.group.latestSummary || ""
-                                                    font.family: Theme.fontText
-                                                    font.pixelSize: 11
-                                                    font.bold: true
-                                                    color: Theme.qsText
-                                                    elide: Text.ElideRight
-                                                    Layout.fillWidth: true
-                                                }
-
-                                                Text {
-                                                    visible: (groupCard.group.latestBody || "") !== ""
-                                                    text: groupCard.group.latestBody || ""
-                                                    font.family: Theme.fontText
-                                                    font.pixelSize: 10
-                                                    color: Theme.qsTextMuted
-                                                    elide: Text.ElideRight
-                                                    Layout.fillWidth: true
-                                                }
+                                            Text {
+                                                text: "No unattended notifications"
+                                                font.family: Theme.fontText
+                                                font.pixelSize: 11
+                                                font.bold: true
+                                                color: Theme.qsText
+                                                Layout.alignment: Qt.AlignHCenter
                                             }
 
-                                            // Accordion: prior notifications list from this app
+                                            Text {
+                                                text: "Alerts will automatically be grouped by application"
+                                                font.family: Theme.fontText
+                                                font.pixelSize: 10
+                                                color: Theme.qsTextMuted
+                                                Layout.alignment: Qt.AlignHCenter
+                                            }
+                                        }
+                                    }
+
+                                    // ── Grouped Notifications List ──
+                                    ListView {
+                                        visible: NotificationState.groups.length > 0
+                                        Layout.fillWidth: true
+                                        Layout.fillHeight: true
+                                        clip: true
+                                        spacing: 5
+                                        boundsBehavior: Flickable.StopAtBounds
+                                        model: NotificationState.groups
+
+                                        delegate: Rectangle {
+                                            id: groupCard
+                                            required property var modelData
+                                            readonly property var group: modelData
+
+                                            width: ListView.view ? ListView.view.width : parent.width
+                                            implicitHeight: cardCol.implicitHeight + 10
+                                            radius: 8
+                                            color: Theme.qsBgAlt
+                                            border.width: 1
+                                            border.color: Theme.pillBorder
+
                                             ColumnLayout {
-                                                visible: groupCard.group.expanded && groupCard.group.count > 1
-                                                Layout.fillWidth: true
+                                                id: cardCol
+                                                anchors.fill: parent
+                                                anchors.margins: 7
                                                 spacing: 3
 
-                                                Rectangle {
+                                                // App header row
+                                                RowLayout {
                                                     Layout.fillWidth: true
-                                                    implicitHeight: 1
-                                                    color: Theme.pillBorder
-                                                    opacity: 0.4
+                                                    spacing: 6
+
+                                                    // App icon pill
+                                                    Rectangle {
+                                                        width: 20
+                                                        height: 20
+                                                        radius: 10
+                                                        color: Theme.plum
+
+                                                        Text {
+                                                            anchors.centerIn: parent
+                                                            text: groupCard.group.appIcon || "notifications"
+                                                            font.family: Theme.fontIcons
+                                                            font.pixelSize: 12
+                                                            color: Theme.ink
+                                                        }
+                                                    }
+
+                                                    // App Name
+                                                    Text {
+                                                        text: groupCard.group.appName
+                                                        font.family: Theme.fontText
+                                                        font.pixelSize: 11
+                                                        font.bold: true
+                                                        color: Theme.qsText
+                                                    }
+
+                                                    // Distinct group count badge (e.g. "× 10" or "1")
+                                                    Rectangle {
+                                                        radius: 7
+                                                        color: Theme.attention
+                                                        implicitHeight: 15
+                                                        implicitWidth: countBadgeTxt.implicitWidth + 8
+
+                                                        Text {
+                                                            id: countBadgeTxt
+                                                            anchors.centerIn: parent
+                                                            text: groupCard.group.count > 1 ? ("× " + groupCard.group.count) : "1"
+                                                            font.family: Theme.fontText
+                                                            font.pixelSize: 8
+                                                            font.bold: true
+                                                            color: Theme.qsOnAccent
+                                                        }
+                                                    }
+
+                                                    Item { Layout.fillWidth: true }
+
+                                                    // Timestamp of latest notification
+                                                    Text {
+                                                        text: groupCard.group.latestTime || ""
+                                                        font.family: Theme.fontText
+                                                        font.pixelSize: 9
+                                                        color: Theme.qsTextMuted
+                                                    }
+
+                                                    // Expand/collapse accordion button (if count > 1)
+                                                    Rectangle {
+                                                        visible: groupCard.group.count > 1
+                                                        width: 20
+                                                        height: 20
+                                                        radius: 10
+                                                        color: "transparent"
+
+                                                        Text {
+                                                            anchors.centerIn: parent
+                                                            text: groupCard.group.expanded ? "expand_less" : "expand_more"
+                                                            font.family: Theme.fontIcons
+                                                            font.pixelSize: 14
+                                                            color: Theme.qsTextMuted
+                                                        }
+
+                                                        MouseArea {
+                                                            anchors.fill: parent
+                                                            cursorShape: Qt.PointingHandCursor
+                                                            onClicked: NotificationState.toggleGroupExpanded(groupCard.group.appName)
+                                                        }
+                                                    }
+
+                                                    // Dismiss this application's notifications
+                                                    Rectangle {
+                                                        width: 20
+                                                        height: 20
+                                                        radius: 10
+                                                        color: "transparent"
+
+                                                        Text {
+                                                            anchors.centerIn: parent
+                                                            text: "close"
+                                                            font.family: Theme.fontIcons
+                                                            font.pixelSize: 12
+                                                            color: Theme.qsTextMuted
+                                                        }
+
+                                                        MouseArea {
+                                                            anchors.fill: parent
+                                                            cursorShape: Qt.PointingHandCursor
+                                                            onClicked: NotificationState.clearGroup(groupCard.group.appName)
+                                                        }
+                                                    }
                                                 }
 
-                                                Repeater {
-                                                    model: (groupCard.group.items || []).slice(1)
+                                                // Latest notification message
+                                                ColumnLayout {
+                                                    Layout.fillWidth: true
+                                                    spacing: 1
 
-                                                    delegate: RowLayout {
-                                                        required property var modelData
-                                                        readonly property var itemData: modelData
+                                                    Text {
+                                                        visible: (groupCard.group.latestSummary || "") !== ""
+                                                        text: groupCard.group.latestSummary || ""
+                                                        font.family: Theme.fontText
+                                                        font.pixelSize: 11
+                                                        font.bold: true
+                                                        color: Theme.qsText
+                                                        elide: Text.ElideRight
                                                         Layout.fillWidth: true
-                                                        spacing: 6
+                                                    }
 
-                                                        Text {
-                                                            text: "•"
-                                                            font.family: Theme.fontText
-                                                            font.pixelSize: 10
-                                                            color: Theme.attention
-                                                        }
+                                                    Text {
+                                                        visible: (groupCard.group.latestBody || "") !== ""
+                                                        text: groupCard.group.latestBody || ""
+                                                        font.family: Theme.fontText
+                                                        font.pixelSize: 10
+                                                        color: Theme.qsTextMuted
+                                                        elide: Text.ElideRight
+                                                        Layout.fillWidth: true
+                                                    }
+                                                }
 
-                                                        Text {
-                                                            text: (itemData.summary ? itemData.summary + ": " : "") + (itemData.body || "")
-                                                            font.family: Theme.fontText
-                                                            font.pixelSize: 10
-                                                            color: Theme.qsTextMuted
-                                                            elide: Text.ElideRight
+                                                // Accordion: prior notifications list from this app
+                                                ColumnLayout {
+                                                    visible: groupCard.group.expanded && groupCard.group.count > 1
+                                                    Layout.fillWidth: true
+                                                    spacing: 3
+
+                                                    Rectangle {
+                                                        Layout.fillWidth: true
+                                                        implicitHeight: 1
+                                                        color: Theme.pillBorder
+                                                        opacity: 0.4
+                                                    }
+
+                                                    Repeater {
+                                                        model: (groupCard.group.items || []).slice(1)
+
+                                                        delegate: RowLayout {
+                                                            required property var modelData
+                                                            readonly property var itemData: modelData
                                                             Layout.fillWidth: true
-                                                        }
+                                                            spacing: 4
 
-                                                        Text {
-                                                            text: itemData.time || ""
-                                                            font.family: Theme.fontText
-                                                            font.pixelSize: 9
-                                                            color: Theme.qsTextMuted
+                                                            Text {
+                                                                text: "•"
+                                                                font.family: Theme.fontText
+                                                                font.pixelSize: 9
+                                                                color: Theme.attention
+                                                            }
+
+                                                            Text {
+                                                                text: (itemData.summary ? itemData.summary + ": " : "") + (itemData.body || "")
+                                                                font.family: Theme.fontText
+                                                                font.pixelSize: 9
+                                                                color: Theme.qsTextMuted
+                                                                elide: Text.ElideRight
+                                                                Layout.fillWidth: true
+                                                            }
+
+                                                            Text {
+                                                                text: itemData.time || ""
+                                                                font.family: Theme.fontText
+                                                                font.pixelSize: 8
+                                                                color: Theme.qsTextMuted
+                                                            }
                                                         }
                                                     }
                                                 }
@@ -3082,12 +3090,12 @@ Pill {
                                         }
                                     }
                                 }
-                            }
-                        }   // ── contentStack
-                    }       // ── content ColumnLayout
-                }           // ── cardContent
-            }               // ── face
-        }                   // ── reveal
-    }                       // ── stage
-}                           // ── popup
-}                           // ── root (Pill)
+                            }   // ── StackLayout
+                        }       // ── contentStack
+                    }           // ── content ColumnLayout
+                }               // ── cardContent
+            }                   // ── face
+        }                       // ── reveal
+    }                           // ── stage
+}                               // ── popup
+}                               // ── root (Pill)
