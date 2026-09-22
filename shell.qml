@@ -7,9 +7,9 @@
 //
 //  WHAT'S IN IT
 //  ------------
-//  • The Hub — a clock pill that expands into a floating window. It is the
-//    single widget that will grow to manage ALL of our windows (Hub.qml).
-//  • The QuickSettings dropdown window (created hidden; a bar button toggles it).
+//  • The Hub — a clock pill that expands into a floating window. It manages
+//    calendar/weather, quick settings (audio, brightness, Wi-Fi, Bluetooth),
+//    and theme/wallpapers (Hub.qml).
 //  • A `Variants` loop that spawns ONE top bar per physical monitor.
 //
 //  THE BAR LAYOUT (three "islands", see ├─ graphics below)
@@ -24,12 +24,6 @@ import QtQuick
 import QtQuick.Layouts
 
 ShellRoot {
-    // The dropdown panel. It is a PanelWindow that starts HIDDEN; pressing the
-    // "tune" pill on the right island toggles `quickSettingsPopup.visible`.
-    QuickSettings {
-        id: quickSettingsPopup
-    }
-
     // ─── THE WALLPAPER (one background surface per monitor) ─────────────────────
     // Quickshell draws the desktop wallpaper itself now (hyprpaper removed).
     // Wallpaper.qml is a background-layer surface; one per connected screen.
@@ -85,6 +79,7 @@ ShellRoot {
                 // it into its own floating window (see Hub.qml). This is the
                 // single widget that will manage all of our windows going forward.
                 Hub {
+                    id: hub
                     screen: modelData   // popup rises on this bar's monitor
                 }
             }
@@ -103,12 +98,11 @@ ShellRoot {
                 // Dictation / speech-to-text toggle.
                 Dictation {}
 
-                // Quick-Settings dropdown toggle button.
+                // Quick-Settings dropdown toggle button (toggles Hub to Settings tab)
                 Pill {
                     icon: "tune"
                     label: ""
-                    // Flip visibility: open if closed, close if open.
-                    onClicked: quickSettingsPopup.visible = !quickSettingsPopup.visible
+                    onClicked: hub.toggleTab("settings")
                 }
             }
         }

@@ -20,6 +20,9 @@ Rectangle {
     // 0 = this month, -1/+1 = previous/next month.
     property int monthOffset: 0
 
+    // Today's calendar date, evaluated once
+    readonly property int currentDay: new Date().getDate()
+
     // The first day of the displayed month (a JS Date).
     readonly property date monthStart: {
         let now = new Date()
@@ -133,7 +136,7 @@ Rectangle {
 
                     readonly property int day: index - root.leadBlanks + 1
                     readonly property bool inMonth: day >= 1 && day <= root.daysInMonth
-                    readonly property bool isToday: root.monthOffset === 0 && day === new Date().getDate()
+                    readonly property bool isToday: root.monthOffset === 0 && day === root.currentDay
                     // Number shown: dimmed previous/next-month days instead of blanks.
                     readonly property int shown: cell.day < 1 ? root.daysPrevMonth + cell.day
                                                     : (cell.day > root.daysInMonth ? cell.day - root.daysInMonth : cell.day)

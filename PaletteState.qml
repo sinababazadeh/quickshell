@@ -65,10 +65,24 @@ Item {
         }
     }
 
+    function normalizePath(p) {
+        if (!p) return ""
+        let home = Quickshell.env("HOME") || ""
+        if (home && p.startsWith("/home/")) {
+            p = p.replace(/^\/home\/[^\/]+\/\.config\/quickshell/, home + "/.config/quickshell")
+        }
+        return p
+    }
+
     function loadRegistry(text) {
         try {
             let obj = JSON.parse(text)
-            if (obj && obj.wallpapers) {
+            if (obj && obj.wallpapers && Array.isArray(obj.wallpapers)) {
+                for (let i = 0; i < obj.wallpapers.length; i++) {
+                    if (obj.wallpapers[i].path) {
+                        obj.wallpapers[i].path = normalizePath(obj.wallpapers[i].path)
+                    }
+                }
                 root.registry = obj
                 root.revision++
             }
@@ -171,9 +185,20 @@ Item {
                   + payload + "\nQS_THEME_EOF"]
     }
 
+    Timer {
+        id: saveDebounceTimer
+        interval: 250
+        repeat: false
+        onTriggered: {
+            registryWriter.payload = JSON.stringify(root.registry, null, 2)
+            if (!registryWriter.running) {
+                registryWriter.running = true
+            }
+        }
+    }
+
     function save() {
-        registryWriter.payload = JSON.stringify(root.registry, null, 2)
-        registryWriter.running = true
+        saveDebounceTimer.restart()
     }
 
     // ─── Follow wallpaper switches ───────────────────────────────────────────────

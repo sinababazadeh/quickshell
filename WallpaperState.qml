@@ -24,10 +24,9 @@ import QtQuick
 Item {
     id: root
 
-    // The active wallpaper (absolute path). Defaults to the config's own
-    // wallpapers folder (the old ~/Pictures files were moved here); replaced
-    // by the saved pick as soon as startup finishes.
-    property string current: "/home/lucid/.config/quickshell/wallpapers/wallpaper3.jpg"
+    // The active wallpaper (absolute path). Dynamically resolves from $HOME;
+    // replaced by the saved pick as soon as startup finishes.
+    property string current: (Quickshell.env("HOME") ? Quickshell.env("HOME") + "/.config/quickshell/wallpapers/wallpaper3.jpg" : "")
 
     // Where the pick is persisted between sessions (relative to $HOME).
     readonly property string stateFile: ".config/quickshell/.wallpaper-state"
@@ -47,8 +46,26 @@ Item {
             waitForEnd: true
             onDataChanged: {
                 let p = stateCollector.text.trim()
-                if (p !== "") root.current = p
+                if (p !== "") {
+                    let home = Quickshell.env("HOME") || ""
+                    if (home && p.startsWith("/home/")) {
+                        p = p.replace(/^\/home\/[^\/]+\/\.config\/quickshell/, home + "/.config/quickshell")
+                    }
+                    root.current = p
+                }
             }
+        }
+    }
+
+    Timer {
+        id: saveWpDebounce
+        interval: 200
+        repeat: false
+        property string pendingPath: ""
+        onTriggered: {
+            let safe = pendingPath.replace(/'/g, "'\\''")
+            Quickshell.execDetached(["bash", "-c",
+                                     "printf '%s' '" + safe + "' > \"$HOME/" + root.stateFile + "\""])
         }
     }
 
@@ -57,9 +74,7 @@ Item {
     function setWallpaper(path) {
         if (path === root.current) return
         root.current = path
-        // Quote the path safely for bash (escape any single quotes).
-        let safe = path.replace(/'/g, "'\\''")
-        Quickshell.execDetached(["bash", "-c",
-                                 "printf '%s' '" + safe + "' > \"$HOME/" + root.stateFile + "\""])
+        saveWpDebounce.pendingPath = path
+        saveWpDebounce.restart()
     }
 }

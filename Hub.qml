@@ -76,7 +76,8 @@ Pill {
 
     onThemePageChanged: if (themePage === "manage") root.refreshPictures()
 
-    // ─── Weather (Tabriz / ir) ──────────────────────────────────────────────────
+    // ─── Weather ────────────────────────────────────────────────────────────────
+    property string weatherLocation: ""      // empty = auto-detect by IP; or set e.g. "tabriz", "London"
     property string weatherCondition: "—"
     property string weatherTemp: "—"
     property string weatherHumidity: "—"
@@ -264,10 +265,10 @@ Pill {
         onExited: root.refreshWallpapers()
     }
 
-    //  9. Tabriz weather (wttr.in). One curl call, e.g.  "Sunny|+28°C|23%|←6km/h"
+    //  9. Weather (wttr.in). One curl call, e.g.  "Sunny|+28°C|23%|←6km/h"
     Process {
         id: weatherProc
-        command: ["bash", "-c", "curl -s --max-time 8 'https://wttr.in/ir/tabriz?format=%C|%t|%h|%w'"]
+        command: ["bash", "-c", "loc=\"" + root.weatherLocation + "\"; curl -s --max-time 8 \"https://wttr.in/${loc}?format=%C|%t|%h|%w\""]
         stdout: StdioCollector {
             id: weatherCollector
             waitForEnd: true
@@ -304,6 +305,24 @@ Pill {
     function toggle() {
         if (popup.visible) root.collapse()
         else root.expand()
+    }
+
+    function toggleTab(tab) {
+        if (popup.visible) {
+            if (root.currentTab === tab) {
+                root.collapse()
+            } else {
+                root.setTab(tab)
+            }
+        } else {
+            root.setTab(tab)
+            root.expand()
+        }
+    }
+
+    function openTab(tab) {
+        root.setTab(tab)
+        if (!popup.visible) root.expand()
     }
 
     function expand() {
@@ -358,8 +377,13 @@ Pill {
     }
 
     function parseWeather() {
+        let raw = weatherCollector.text.trim()
+        if (!raw || raw.includes("Unknown location") || raw.includes("<html") || raw.includes("502")) {
+            root.weatherOK = false
+            return
+        }
         // curl format: %C|%t|%h|%w  →  "Sunny|+28°C|23%|←6 km/h"  (4 fields)
-        let parts = weatherCollector.text.trim().split("|")
+        let parts = raw.split("|")
         root.weatherOK = parts.length >= 4
         root.weatherCondition = parts.length > 0 ? parts[0] : "—"
         root.weatherTemp = parts.length > 1 ? parts[1].replace(/^\+/, "") : "—"

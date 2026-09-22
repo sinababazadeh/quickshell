@@ -37,6 +37,11 @@ Rectangle {
     // --- Signal: fired when the USER drags, with the new 0.0–1.0 value -----------
     signal valueChangedByUser(real newValue)
 
+    // Internal drag state to prevent destroying the parent's QML property binding
+    property bool isDragging: false
+    property real dragValue: 0.0
+    readonly property real effectiveValue: isDragging ? dragValue : root.value
+
     implicitHeight: 38
     Layout.fillWidth: true
     radius: 0
@@ -121,7 +126,7 @@ Rectangle {
                 radius: height / 2
                 color: Theme.attention
                 anchors.verticalCenter: parent.verticalCenter
-                x: (root.value / (root.maxValue > 0 ? root.maxValue : 1)) * Math.max(0, rail.width - width)
+                x: ((root.maxValue > 0 ? root.effectiveValue / root.maxValue : 0)) * Math.max(0, rail.width - width)
             }
 
             // --- Optional value text (right-aligned in the track) -----------------------
@@ -146,21 +151,25 @@ Rectangle {
                 //   newVal   = (clampedX / rail.width) × maxValue
                 function updateVal(mouse) {
                     let clampedX = Math.max(0, Math.min(rail.width, mouse.x))
-                    let newVal = (clampedX / rail.width) * root.maxValue
-                    root.valueChangedByUser(newVal)   // tell the app world
-                    root.value = newVal               // move the ball ourselves
+                    let newVal = rail.width > 0 ? (clampedX / rail.width) * root.maxValue : 0
+                    root.dragValue = newVal
+                    root.valueChangedByUser(newVal)   // notify listeners without breaking property binding
                 }
 
-                onPressed: mouse => updateVal(mouse)              // click to jump
-                onPositionChanged: mouse => {                     // drag to follow
+                onPressed: mouse => {
+                    root.isDragging = true
+                    updateVal(mouse)
+                }
+                onPositionChanged: mouse => {
                     if (pressed) updateVal(mouse)
                 }
+                onReleased: root.isDragging = false
+                onCanceled: root.isDragging = false
                 onWheel: wheel => {                               // scroll to adjust
                     let step = root.maxValue * 0.05               // 5% of the range
                     let delta = wheel.angleDelta.y > 0 ? step : -step
                     let newVal = Math.max(0, Math.min(root.maxValue, root.value + delta))
                     root.valueChangedByUser(newVal)
-                    root.value = newVal
                 }
             }
         }
