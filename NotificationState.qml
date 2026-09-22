@@ -19,6 +19,8 @@
 pragma Singleton
 import Quickshell
 import Quickshell.Services.Notifications
+import Quickshell.Services.Pipewire
+import Quickshell.Io
 import QtQuick
 
 Item {
@@ -47,6 +49,106 @@ Item {
 
     // Signal emitted whenever a notification arrives
     signal notificationReceived(var notif)
+
+    // ─── Audio Ducking & Chime ───────────────────────────────────────────────────
+    property bool soundEnabled: true
+    property bool duckingEnabled: true
+    property real savedVolume: -1.0
+    property real duckedVolume: 0.0
+    property bool isDucked: false
+    property int restoreStep: 0
+
+    PwObjectTracker {
+        objects: [Pipewire.defaultAudioSink]
+    }
+
+    readonly property var sink: Pipewire.defaultAudioSink
+    readonly property var audio: sink ? sink.audio : null
+
+    // Holds ducking while chime is playing, then begins smooth ramp-up
+    Timer {
+        id: duckHoldTimer
+        interval: 950
+        repeat: false
+        onTriggered: {
+            if (root.isDucked && root.audio && root.savedVolume > 0) {
+                root.restoreStep = 0
+                rampTimer.start()
+            } else {
+                root.isDucked = false
+                root.savedVolume = -1.0
+            }
+        }
+    }
+
+    // Smooth 5-step fade back up to original volume
+    Timer {
+        id: rampTimer
+        interval: 40
+        repeat: true
+        onTriggered: {
+            if (!root.audio || root.savedVolume <= 0) {
+                rampTimer.stop()
+                root.isDucked = false
+                return
+            }
+
+            root.restoreStep++
+            let factor = root.restoreStep / 5.0
+            if (factor >= 1.0) {
+                root.audio.volume = root.savedVolume
+                root.isDucked = false
+                root.savedVolume = -1.0
+                rampTimer.stop()
+            } else {
+                // Smooth ease-in-out factor
+                let ease = factor * factor * (3.0 - 2.0 * factor)
+                root.audio.volume = Math.min(1.5, Math.max(0.0, root.duckedVolume + (root.savedVolume - root.duckedVolume) * ease))
+            }
+        }
+    }
+
+    Process {
+        id: chimeProc
+        command: [
+            "bash", "-c",
+            "SOUND=\"\"; " +
+            "for s in \"${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/sounds/ding.wav\" " +
+            "         \"$(pwd)/sounds/ding.wav\" " +
+            "         \"$(pwd)/repo_quickshell/sounds/ding.wav\" " +
+            "         \"/usr/share/sounds/freedesktop/stereo/message-new-instant.oga\" " +
+            "         \"/usr/share/sounds/freedesktop/stereo/bell.oga\"; do " +
+            "    if [ -f \"$s\" ]; then SOUND=\"$s\"; break; fi; " +
+            "done; " +
+            "if [ -n \"$SOUND\" ]; then " +
+            "    if command -v pw-play >/dev/null 2>&1; then pw-play \"$SOUND\"; " +
+            "    elif command -v paplay >/dev/null 2>&1; then paplay \"$SOUND\"; " +
+            "    elif command -v aplay >/dev/null 2>&1; then aplay -q \"$SOUND\"; " +
+            "    elif command -v canberra-gtk-play >/dev/null 2>&1; then canberra-gtk-play -f \"$SOUND\" 2>/dev/null; " +
+            "    elif command -v mpv >/dev/null 2>&1; then mpv --no-video --volume=85 \"$SOUND\" >/dev/null 2>&1; " +
+            "    elif command -v ffplay >/dev/null 2>&1; then ffplay -nodisp -autoexit -volume 85 \"$SOUND\" >/dev/null 2>&1; " +
+            "    fi; " +
+            "fi"
+        ]
+    }
+
+    function playNotificationChime() {
+        if (!root.soundEnabled) return
+
+        if (root.duckingEnabled && root.audio && !root.audio.muted && root.audio.volume > 0.05) {
+            rampTimer.stop()
+            if (!root.isDucked || root.savedVolume <= 0) {
+                root.savedVolume = root.audio.volume
+                root.isDucked = true
+            }
+            root.duckedVolume = Math.max(0.04, root.savedVolume * 0.30)
+            root.audio.volume = root.duckedVolume
+            duckHoldTimer.restart()
+        }
+
+        if (chimeProc.running) chimeProc.running = false
+        chimeProc.running = true
+    }
 
     // ─── Native Quickshell Notification Server ───────────────────────────────────
     NotificationServer {
@@ -218,6 +320,9 @@ Item {
 
         // Dispatch signal for bar Dynamic Island morph
         root.notificationReceived(notif)
+
+        // Duck background audio & play professional glass chime
+        root.playNotificationChime()
     }
 
     // ─── Query Group by App Name ────────────────────────────────────────────────

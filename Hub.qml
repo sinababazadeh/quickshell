@@ -2762,6 +2762,41 @@ Pill {
 
                                         Item { Layout.fillWidth: true }
 
+                                        // Notification chime toggle button
+                                        Rectangle {
+                                            implicitHeight: 20
+                                            implicitWidth: chimeBtnRow.implicitWidth + 12
+                                            radius: 10
+                                            color: Theme.qsBgAlt
+                                            border.width: 1
+                                            border.color: Theme.pillBorder
+
+                                            RowLayout {
+                                                id: chimeBtnRow
+                                                anchors.centerIn: parent
+                                                spacing: 4
+                                                Text {
+                                                    text: NotificationState.soundEnabled ? "volume_up" : "volume_off"
+                                                    font.family: Theme.fontIcons
+                                                    font.pixelSize: 11
+                                                    color: NotificationState.soundEnabled ? Theme.qsText : Theme.qsTextMuted
+                                                }
+                                                Text {
+                                                    text: NotificationState.soundEnabled ? "Chime" : "Muted"
+                                                    font.family: Theme.fontText
+                                                    font.pixelSize: 9
+                                                    font.bold: true
+                                                    color: NotificationState.soundEnabled ? Theme.qsText : Theme.qsTextMuted
+                                                }
+                                            }
+
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: NotificationState.soundEnabled = !NotificationState.soundEnabled
+                                            }
+                                        }
+
                                         // Quick test simulation button
                                         Rectangle {
                                             implicitHeight: 20
