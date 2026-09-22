@@ -37,6 +37,7 @@ Rectangle {
     property color bgColor: Theme.plum       // LEFT segment color (icon side)
     property color labelBg: Theme.primary    // RIGHT segment color (label side)
     property int maxLabelWidth: 400          // labels longer than this get ...
+    property real contentOpacity: 1.0        // opacity of rendered segments (for seamless transitions)
 
     // --- Signals (the component's "events") -----------------------------------
     // Other files write `onClicked: ...` to run code when the pill is pressed.
@@ -45,6 +46,8 @@ Rectangle {
     // --- Derived conveniences (readonly = computed, not settable) -------------
     readonly property bool hasIcon:  root.icon !== ""   // true → draw icon segment
     readonly property bool hasLabel: root.label !== ""  // true → draw label segment
+    readonly property real iconSegWidth: iconSeg.width
+    readonly property real textSegWidth: textSeg.width
 
     // --- The Rectangle's own geometry ------------------------------------------
     implicitWidth: iconSeg.width + textSeg.width  // total width = both segments
@@ -60,6 +63,7 @@ Rectangle {
     Rectangle {
         id: iconSeg
         visible: root.hasIcon
+        opacity: root.contentOpacity
         width: visible ? iconTxt.width + 14 : 0   // glyph width + padding
         height: parent.height
         anchors.left: parent.left
@@ -89,6 +93,7 @@ Rectangle {
     Rectangle {
         id: textSeg
         visible: root.hasLabel
+        opacity: root.contentOpacity
         width: visible ? labelTxt.implicitWidth + 8 : 0
         height: parent.height
         anchors.left: iconSeg.right     // start exactly where the icon ends

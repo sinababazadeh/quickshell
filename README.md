@@ -57,7 +57,7 @@ launches `quickshell`). After editing ANY `.qml` file you must reload:
 | The expanding center widget | `Hub.qml` — clock pill + its floating window |
 | Which tab is open           | `Hub.qml` — `currentTab`: "settings" \| "calendar" |
 | Volume boost ceiling        | `Hub.qml` — volume `CustomSlider` `maxValue: 1.5` (=150%) |
-| The expand animation style  | `Hub.qml` — `animStyle`: "drop" \| "pop" \| "curtain" \| "stagger" \| "swing" |
+| The expand animation style  | `Hub.qml` — `animStyle`: "island" (Dynamic Island) \| "drop" \| "pop" \| "curtain" \| "stagger" \| "swing" |
 | QuickSettings width         | `QuickSettings.qml` — implicitWidth        |
 
 A color is just hex: `#RRGGBB` or `#AARRGGBB` (AA = opacity 00–FF).

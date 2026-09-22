@@ -43,12 +43,35 @@ Pill {
     readonly property bool open: popup.visible
     property bool closing: false              // true while the close animation plays
 
-    // Which "expand" animation to use: "drop" | "pop" | "curtain" | "stagger" | "swing".
-    property string animStyle: "drop"
+    // Which "expand" animation to use: "island" | "drop" | "pop" | "curtain" | "stagger" | "swing".
+    property string animStyle: "island"
 
     // Window geometry — the card FILLS the window (no dead click zones around it).
     readonly property int hubW: 630
     readonly property int hubH: 450
+
+    // ─── Apple Dynamic Island Morphing Engine ──────────────────────────────────
+    property real islandProgress: 0.0
+    readonly property real pillW: Math.max(110, root.implicitWidth)
+    readonly property real pillH: Theme.pillHeight
+
+    readonly property real islandW: root.animStyle === "island"
+        ? Math.min(root.hubW, root.pillW + (root.hubW - root.pillW) * root.islandProgress)
+        : root.hubW
+
+    readonly property real islandH: root.animStyle === "island"
+        ? (root.pillH + (root.hubH - root.pillH) * root.islandProgress)
+        : root.hubH
+
+    readonly property real islandX: (root.hubW - islandW) / 2
+
+    readonly property real islandY: root.animStyle === "island"
+        ? (38 * Math.min(1.0, Math.max(0.0, root.islandProgress)))
+        : 0
+
+    readonly property real islandRadius: root.animStyle === "island"
+        ? Math.max(14, (root.pillH / 2) + (16 - (root.pillH / 2)) * Math.min(1.0, Math.max(0.0, root.islandProgress)))
+        : 14
 
     // ─── Tabs ───────────────────────────────────────────────────────────────────
     // The hub opens on the calendar face by default; "settings" is the other tab.
@@ -339,6 +362,10 @@ Pill {
         closing = false
         stopAllAnims()
         prepareFace()                   // undo whatever a previous close left behind
+        if (root.animStyle === "island") {
+            root.contentOpacity = 0.0
+            root.islandProgress = 0.0
+        }
         popup.visible = true
         grab.active = true              // arm click-outside-to-close
         root.refreshData()
@@ -413,6 +440,7 @@ Pill {
     function startOpen() {
         resetContent()                            // clear leftovers from a stagger close
         switch (root.animStyle) {
+            case "island":  animIslandOpen.start();  break
             case "pop":     animPopOpen.start();     break
             case "curtain": animCurtainOpen.start(); break
             case "stagger":
@@ -430,6 +458,7 @@ Pill {
 
     function startClose() {
         switch (root.animStyle) {
+            case "island":  animIslandClose.start();  break
             case "pop":     animPopClose.start();     break
             case "curtain": animCurtainClose.start(); break
             case "stagger": animStaggerClose.start(); break
@@ -442,6 +471,7 @@ Pill {
     // least this long so the close animation is actually visible.
     function closeMs() {
         switch (root.animStyle) {
+            case "island":  return 250
             case "pop":     return 380
             case "curtain": return 320
             case "stagger": return 620
@@ -478,12 +508,15 @@ Pill {
         onTriggered: {
             popup.visible = false
             closing = false
+            root.contentOpacity = 1.0
+            root.islandProgress = 0.0
         }
     }
 
     // Stops every open/close group, so two animations can never fight over
     // the same property when the hub flips state mid-animation.
     function stopAllAnims() {
+        animIslandOpen.stop();  animIslandClose.stop()
         animDropOpen.stop();    animPopOpen.stop();     animCurtainOpen.stop()
         animStaggerOpen.stop(); animSwingOpen.stop()
         animDropClose.stop();   animPopClose.stop();    animCurtainClose.stop()
@@ -498,10 +531,15 @@ Pill {
         // Re-declare the binding (a curtain close or a plain assignment
         // un-binds `reveal.height`, which would break the curtain style).
         reveal.height = Qt.binding(() => stage.height)
-        face.opacity = 0                // open animations fade it back in
-        faceScale.xScale = 1; faceScale.yScale = 1
-        faceShift.y = 0
-        faceSpin.angle = 0
+        if (root.animStyle !== "island") {
+            face.opacity = 0                // open animations fade it back in
+            faceScale.xScale = 1; faceScale.yScale = 1
+            faceShift.y = 0
+            faceSpin.angle = 0
+        } else {
+            face.opacity = 1
+            root.islandProgress = 0.0
+        }
     }
 
     // =============================================================================
@@ -520,17 +558,19 @@ Pill {
             grab.active = false
             stopAllAnims()
             prepareFace()
+            root.contentOpacity = 1.0
+            root.islandProgress = 0.0
         }
 
         anchors { top: true; left: true }
         margins {
-            // top: Theme.barHeight + 6                            // clears the bar
+            top: Math.round((Theme.barHeight - Theme.pillHeight) / 2) // 5px (top of the bar pill)
             left: Math.max(0, Math.round((popup.screen.width - root.hubW) / 2))
         }
 
-        // +50% size bump: 420×300 → 630×450 (the card fills the whole window).
+        // Window size — transparent surface accommodating the island's expansion and floating resting position.
         implicitWidth: root.hubW
-        implicitHeight: root.hubH
+        implicitHeight: root.hubH + 50
 
         // ─── CLICK-OUTSIDE-TO-CLOSE ─────────────────────────────────────────────
         // While the hub is open, Hyprland hands input focus to this window
@@ -545,34 +585,76 @@ Pill {
         }
 
         // ─── THE ANIMATION ENGINE ───────────────────────────────────────────────
-        // The card (`stage`) fills the whole window and is wrapped in a
-        // clipping `reveal`, so the "curtain" style can grow its height
-        // without squishing the content inside.
+        // The card (`stage`) fills the window. In Dynamic Island mode, the `face`
+        // morphs from the top bar pill down to the full card with Apple spring physics.
         Item {
             id: stage
             anchors.fill: parent   // card fills the window — no dead zones
 
+            // Dismiss when clicking anywhere outside the island surface
+            MouseArea {
+                anchors.fill: parent
+                z: -1
+                onClicked: root.collapse()
+            }
+
             Item {
                 id: reveal
-                anchors.top: parent.top
-                anchors.left: parent.left
-                anchors.right: parent.right
-                height: stage.height
-                clip: true
+                anchors.fill: parent
+                clip: root.animStyle !== "island"
 
                 Rectangle {
                     id: face
-                    anchors.fill: reveal
-                    radius: 14
+                    x: root.animStyle === "island" ? root.islandX : 0
+                    y: root.animStyle === "island" ? root.islandY : 0
+                    width: root.animStyle === "island" ? root.islandW : parent.width
+                    height: root.animStyle === "island" ? root.islandH : reveal.height
+                    radius: root.animStyle === "island" ? root.islandRadius : 14
                     color: Theme.qsBg
                     clip: true
-                    opacity: 0   // hidden until an open animation turns it on
+                    opacity: root.animStyle === "island" ? 1 : 0
+                    border.width: 1
+                    border.color: Theme.pillBorder !== "transparent" ? Theme.pillBorder : Qt.rgba(1, 1, 1, 0.08)
 
                     transform: [
                         Translate { id: faceShift; y: 0 },
                         Rotation  { id: faceSpin;  origin.x: face.width / 2; origin.y: 0; angle: 0 },
                         Scale     { id: faceScale; origin.x: face.width / 2; origin.y: 0; xScale: 1; yScale: 1 }
                     ]
+
+                    // ─── Apple Dynamic Island Animations ────────────────────
+                    ParallelAnimation {
+                        id: animIslandOpen
+                        running: false
+                        NumberAnimation {
+                            target: root
+                            property: "islandProgress"
+                            from: root.islandProgress
+                            to: 1.0
+                            duration: 380
+                            easing.type: Easing.OutBack
+                            easing.overshoot: 1.15
+                        }
+                    }
+
+                    ParallelAnimation {
+                        id: animIslandClose
+                        running: false
+                        NumberAnimation {
+                            target: root
+                            property: "islandProgress"
+                            from: root.islandProgress
+                            to: 0.0
+                            duration: 250
+                            easing.type: Easing.OutCubic
+                        }
+                        onFinished: {
+                            popup.visible = false
+                            closing = false
+                            root.contentOpacity = 1.0
+                            root.islandProgress = 0.0
+                        }
+                    }
 
                     // ─── OPEN groups (one per style) ────────────────────────
                     ParallelAnimation {
@@ -684,13 +766,81 @@ Pill {
                         NumberAnimation { target: faceScale; property: "yScale";  to: 0.95; duration: 220; easing.type: Easing.InCubic }
                     }
 
-                    // =============================================================
-                    //  THE CARD CONTENT  (header, tab bar, and the two tab views)
-                    // =============================================================
-                    ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: 14
-                        spacing: 10
+                    // ─── Apple Dynamic Island: Collapsed Pill Face (Phase 1) ───
+                    Item {
+                        id: morphPillFace
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        y: Math.max(0, (Math.min(face.height, root.pillH) - root.pillH) / 2)
+                        width: root.pillW
+                        height: root.pillH
+                        visible: opacity > 0.001
+                        opacity: root.animStyle === "island" ? Math.max(0.0, 1.0 - root.islandProgress * 3.5) : 0.0
+
+                        Rectangle {
+                            id: morphIconSeg
+                            width: root.iconSegWidth > 0 ? root.iconSegWidth : 36
+                            height: parent.height
+                            anchors.left: parent.left
+                            color: root.bgColor
+                            topLeftRadius: height / 2
+                            bottomLeftRadius: height / 2
+                            topRightRadius: 0
+                            bottomRightRadius: 0
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: root.icon
+                                color: root.iconColor
+                                font.family: Theme.fontIcons
+                                font.pixelSize: 17
+                                leftPadding: 4
+                            }
+                        }
+
+                        Rectangle {
+                            id: morphTextSeg
+                            width: Math.max(0, parent.width - morphIconSeg.width)
+                            height: parent.height
+                            anchors.left: morphIconSeg.right
+                            color: root.open ? Theme.indigo : Theme.primary
+                            topLeftRadius: 0
+                            bottomLeftRadius: 0
+                            topRightRadius: height / 2
+                            bottomRightRadius: height / 2
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: root.label
+                                color: root.textColor
+                                font.family: Theme.fontText
+                                font.pixelSize: 14
+                            }
+                        }
+                    }
+
+                    // ─── Apple Dynamic Island: Expanded Hub Content (Phase 2) ───
+                    Item {
+                        id: cardContent
+                        width: root.hubW
+                        height: root.hubH
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.top: parent.top
+                        clip: true
+                        visible: opacity > 0.001
+                        opacity: root.animStyle === "island"
+                            ? Math.min(1.0, Math.max(0.0, (root.islandProgress - 0.20) / 0.60))
+                            : 1.0
+                        transform: Translate {
+                            y: root.animStyle === "island" ? (1.0 - Math.min(1.0, root.islandProgress)) * 14 : 0
+                        }
+
+                        // =============================================================
+                        //  THE CARD CONTENT  (header, tab bar, and the two tab views)
+                        // =============================================================
+                        ColumnLayout {
+                            anchors.fill: parent
+                            anchors.margins: 14
+                            spacing: 10
 
                         // ─── HEADER: icon capsule | time + date | collapse ───────
                         RowLayout {
@@ -2131,8 +2281,9 @@ Pill {
                             }
                         }   // ── contentStack
                     }       // ── content ColumnLayout
-                }           // ── face
-            }               // ── reveal
-        }                   // ── stage
-    }                       // ── popup
+                }           // ── cardContent
+            }               // ── face
+        }                   // ── reveal
+    }                       // ── stage
+}                           // ── popup
 }                           // ── root (Pill)
