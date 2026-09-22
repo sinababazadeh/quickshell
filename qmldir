@@ -1,0 +1,46 @@
+###############################################################################
+# qmldir — directory manifest for this Quickshell configuration
+#
+# READING THIS FILE
+# ------------------
+# Every .qml file in this folder is registered here as a "module component".
+# That is what lets OTHER files use them without an import statement, e.g.
+# shell.qml can simply write `Volume { }` because "Volume" is registered below.
+#
+# FORMAT
+#   <type name>  <version>  <file name>
+#
+# TYPES
+#   * <FILE.qml>          → a normal reusable component (use it like <Type> { })
+#   * singleton <NAME>    → only ONE instance exists, accessed by its name
+#
+# Note: qmldir only matters in the SAME directory as the config entry point
+# (shell.qml). Quickshell reads it automatically.
+###############################################################################
+
+# --- Global design tokens (colors, fonts, sizes) -----------------------------
+# The "singleton" keyword means every file can use `Theme.fontText`,
+# `Theme.barBg`, etc. without creating an instance. Edit values in Theme.qml.
+singleton Theme 1.0 Theme.qml
+
+# --- The wallpaper (drawn by quickshell itself — no hyprpaper) ----------------
+singleton WallpaperState 1.0 WallpaperState.qml  # active path + persistence
+singleton PaletteState   1.0 PaletteState.qml    # per-wallpaper color palettes
+Wallpaper        1.0 Wallpaper.qml                # per-monitor background surface
+
+# --- Reusable UI capsules (the "pill" family) --------------------------------
+Pill           1.0 Pill.qml          # 2-part capsule: icon | label
+ActionPill     1.0 ActionPill.qml    # Like Pill, but stretches to fill width
+QuickToggle    1.0 QuickToggle.qml   # Big toggle tile: icon + title/status + chevron
+CustomSlider   1.0 CustomSlider.qml  # Slider tile: icon + draggable track
+
+# --- Bar widgets (one file per feature on the top bar) -----------------------
+Workspaces     1.0 Workspaces.qml    # Workspace pips + overview (expo) button
+Volume         1.0 Volume.qml        # Audio volume pill (click/wheel)
+Dictation      1.0 Dictation.qml     # Speech-to-text record pill (hyprwhspr)
+Hub            1.0 Hub.qml          # Center clock → expands into a floating window
+CalendarGrid   1.0 CalendarGrid.qml # Month calendar (Hub calendar/weather tab)
+
+# --- Panels -------------------------------------------------------------------
+# QuickSettings is a whole PanelWindow (the dropdown), not just a widget.
+QuickSettings  1.0 QuickSettings.qml

@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "wallpapers": [
+    {
+      "path": "/home/lucid/.config/quickshell/wallpapers/wallpaper1.jpg",
+      "name": "wallpaper1.jpg",
+      "palette": {
+        "bg": "#0f0b26",
+        "indigo": "#1e0d8c",
+        "violet": "#170973",
+        "primary": "#140a4e",
+        "attention": "#f27289",
+        "plum": "#2f1ea0",
+        "ink": "#f5f5f5",
+        "cream": "#d8d8ff",
+        "lavender": "#a3a1f9"
+      }
+    },
+    {
+      "path": "/home/lucid/.config/quickshell/wallpapers/wallpaper2.jpg",
+      "name": "wallpaper2.jpg",
+      "palette": {
+        "bg": "#151d18",
+        "indigo": "#223129",
+        "violet": "#2a3c33",
+        "primary": "#1b2821",
+        "attention": "#52b788",
+        "plum": "#2d5a43",
+        "ink": "#f5f5f5",
+        "cream": "#c8ded1",
+        "lavender": "#95c2a9"
+      }
+    },
+    {
+      "path": "/home/lucid/.config/quickshell/wallpapers/wallpaper3.jpg",
+      "name": "wallpaper3.jpg",
+      "palette": {
+        "bg": "#0f0b26",
+        "indigo": "#1e0d8c",
+        "violet": "#170973",
+        "primary": "#140a4e",
+        "attention": "#f27289",
+        "plum": "#2f1ea0",
+        "ink": "#f5f5f5",
+        "cream": "#d8d8ff",
+        "lavender": "#a3a1f9"
+      }
+    }
+  ]
+}
