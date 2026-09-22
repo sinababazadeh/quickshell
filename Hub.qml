@@ -65,9 +65,12 @@ Pill {
 
     readonly property real islandX: (root.hubW - islandW) / 2
 
+    // Resting top gap from screen top when fully expanded (0 = flush to screen top)
+    property int hubTopGap: 0
+
     readonly property real islandY: root.animStyle === "island"
-        ? (38 * Math.min(1.0, Math.max(0.0, root.islandProgress)))
-        : 0
+        ? Math.round(((Theme.barHeight - Theme.pillHeight) / 2) - (((Theme.barHeight - Theme.pillHeight) / 2) - root.hubTopGap) * Math.min(1.0, Math.max(0.0, root.islandProgress)))
+        : root.hubTopGap
 
     readonly property real islandRadius: root.animStyle === "island"
         ? Math.max(14, (root.pillH / 2) + (16 - (root.pillH / 2)) * Math.min(1.0, Math.max(0.0, root.islandProgress)))
@@ -564,13 +567,13 @@ Pill {
 
         anchors { top: true; left: true }
         margins {
-            top: Math.round((Theme.barHeight - Theme.pillHeight) / 2) // 5px (top of the bar pill)
+            top: 0
             left: Math.max(0, Math.round((popup.screen.width - root.hubW) / 2))
         }
 
-        // Window size — transparent surface accommodating the island's expansion and floating resting position.
+        // Window size — transparent surface accommodating the island's expansion and top resting position.
         implicitWidth: root.hubW
-        implicitHeight: root.hubH + 50
+        implicitHeight: root.hubH + 20
 
         // ─── CLICK-OUTSIDE-TO-CLOSE ─────────────────────────────────────────────
         // While the hub is open, Hyprland hands input focus to this window
