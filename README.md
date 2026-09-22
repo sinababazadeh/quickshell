@@ -35,7 +35,7 @@ launches `quickshell`). After editing ANY `.qml` file you must reload:
     Workspaces.qml      Workspace pips + hyprexpo overview button.
     Volume.qml          Audio volume pill (click = mute, scroll = level).
     Dictation.qml       Speech-to-text (hyprwhspr) mic pill.
-    Hub.qml             Clock pill that expands into a floating 630×360 pill-shaped
+    Hub.qml             Clock pill that expands into a floating 630×288 pill-shaped
                         window. Reclaims top screen space with a browser-style top tab bar
                         (Calendar, Theme, Settings). Ships with:
                         - **Calendar**: Clock, Tabriz weather, and interactive month calendar. Always the default tab on open.

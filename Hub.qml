@@ -49,7 +49,7 @@ Pill {
 
     // Window geometry — the card FILLS the window (no dead click zones around it).
     readonly property int hubW: 630
-    readonly property int hubH: 360
+    readonly property int hubH: 288
 
     // ─── Apple Dynamic Island Morphing Engine ──────────────────────────────────
     property real islandProgress: 0.0
@@ -88,13 +88,19 @@ Pill {
         if (!root.wallpapers || root.wallpapers.length === 0) return 0
         let cur = WallpaperState.current
         let idx = root.wallpapers.indexOf(cur)
-        return idx >= 0 ? idx : 0
+        if (idx >= 0) return idx
+        let curBase = cur ? cur.split("/").pop() : ""
+        for (let i = 0; i < root.wallpapers.length; i++) {
+            if (root.wallpapers[i].split("/").pop() === curBase) return i
+        }
+        return 0
     }
 
     function selectPrevWallpaper() {
         if (!root.wallpapers || root.wallpapers.length === 0) return
         let count = root.wallpapers.length
-        let nextIdx = (root.wallIndex - 1 + count) % count
+        let cur = root.currentWallIdx()
+        let nextIdx = (cur - 1 + count) % count
         root.wallIndex = nextIdx
         WallpaperState.setWallpaper(root.wallpapers[nextIdx])
     }
@@ -102,7 +108,8 @@ Pill {
     function selectNextWallpaper() {
         if (!root.wallpapers || root.wallpapers.length === 0) return
         let count = root.wallpapers.length
-        let nextIdx = (root.wallIndex + 1) % count
+        let cur = root.currentWallIdx()
+        let nextIdx = (cur + 1) % count
         root.wallIndex = nextIdx
         WallpaperState.setWallpaper(root.wallpapers[nextIdx])
     }
@@ -1167,7 +1174,7 @@ Pill {
                                                     anchors.right: parent.right
                                                     height: parent.height
                                                     anchors.verticalCenter: parent.verticalCenter
-                                                    color: root.wifiActive ? Theme.attention : Theme.primary
+                                                    color: Theme.primary
                                                     topLeftRadius: 0
                                                     bottomLeftRadius: 0
                                                     topRightRadius: height / 2
@@ -1184,7 +1191,7 @@ Pill {
                                                             font.family: Theme.fontText
                                                             font.pixelSize: 11
                                                             font.bold: true
-                                                            color: root.wifiActive ? Theme.qsOnAccent : Theme.ink
+                                                            color: Theme.ink
                                                             Layout.fillWidth: true
                                                             elide: Text.ElideRight
                                                             Layout.alignment: Qt.AlignVCenter
@@ -1194,7 +1201,7 @@ Pill {
                                                             text: "chevron_right"
                                                             font.family: Theme.fontIcons
                                                             font.pixelSize: 14
-                                                            color: root.wifiActive ? Theme.qsOnAccent : Theme.qsTextMuted
+                                                            color: Theme.qsTextMuted
                                                             Layout.alignment: Qt.AlignVCenter
                                                         }
                                                     }
@@ -1253,7 +1260,7 @@ Pill {
                                                     anchors.right: parent.right
                                                     height: parent.height
                                                     anchors.verticalCenter: parent.verticalCenter
-                                                    color: root.btActive ? Theme.attention : Theme.primary
+                                                    color: Theme.primary
                                                     topLeftRadius: 0
                                                     bottomLeftRadius: 0
                                                     topRightRadius: height / 2
@@ -1270,7 +1277,7 @@ Pill {
                                                             font.family: Theme.fontText
                                                             font.pixelSize: 11
                                                             font.bold: true
-                                                            color: root.btActive ? Theme.qsOnAccent : Theme.ink
+                                                            color: Theme.ink
                                                             Layout.fillWidth: true
                                                             elide: Text.ElideRight
                                                             Layout.alignment: Qt.AlignVCenter
@@ -1280,7 +1287,7 @@ Pill {
                                                             text: "chevron_right"
                                                             font.family: Theme.fontIcons
                                                             font.pixelSize: 14
-                                                            color: root.btActive ? Theme.qsOnAccent : Theme.qsTextMuted
+                                                            color: Theme.qsTextMuted
                                                             Layout.alignment: Qt.AlignVCenter
                                                         }
                                                     }
@@ -1788,67 +1795,255 @@ Pill {
                                         Layout.topMargin: 20
                                     }
 
-                                    // ── Thumbnail grid ───────────────────────────
-                                    GridView {
-                                        id: wallGrid
+                                    // ── Carousel Coverflow View ──────────────────
+                                    Item {
+                                        id: wallCarousel
                                         visible: root.wallpapers.length > 0 && root.themePage === "picker"
                                         Layout.fillWidth: true
                                         Layout.fillHeight: true
                                         clip: true
-                                        boundsBehavior: Flickable.StopAtBounds
-                                        model: root.wallpapers
-                                        cellWidth: Math.floor(width / 2)
-                                        cellHeight: Math.round(cellWidth * 0.56) + 22
 
-                                        // One cell per image. Clicking applies it
-                                        // through the WallpaperState singleton.
-                                        delegate: Item {
-                                            id: wallCell
-                                            required property string modelData
-                                            readonly property bool isCurrent: WallpaperState.current === wallCell.modelData
-                                            width: wallGrid.cellWidth
-                                            height: wallGrid.cellHeight
+                                        readonly property int totalWps: root.wallpapers.length
+                                        readonly property int activeIdx: root.currentWallIdx()
+                                        readonly property int prevIdx: totalWps > 0 ? (activeIdx - 1 + totalWps) % totalWps : 0
+                                        readonly property int nextIdx: totalWps > 0 ? (activeIdx + 1) % totalWps : 0
 
-                                            Rectangle {
-                                                id: thumb
+                                        readonly property string activeWp: totalWps > 0 ? root.wallpapers[activeIdx] : ""
+                                        readonly property string prevWp: totalWps > 1 ? root.wallpapers[prevIdx] : ""
+                                        readonly property string nextWp: totalWps > 1 ? root.wallpapers[nextIdx] : ""
+
+                                        property real dragOffset: 0
+
+                                        NumberAnimation {
+                                            id: snapAnim
+                                            target: wallCarousel
+                                            property: "dragOffset"
+                                            to: 0
+                                            duration: 200
+                                            easing.type: Easing.OutQuad
+                                        }
+
+                                        // Left peeking wallpaper card (previous)
+                                        Rectangle {
+                                            id: leftPeekCard
+                                            visible: wallCarousel.totalWps > 1
+                                            width: 240
+                                            height: 136
+                                            radius: 10
+                                            color: Theme.qsBgAlt
+                                            border.width: 1
+                                            border.color: Theme.pillBorder
+                                            clip: true
+                                            opacity: 0.5
+                                            scale: 0.88
+                                            z: 1
+
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            anchors.verticalCenterOffset: -4
+                                            anchors.right: centerCard.left
+                                            anchors.rightMargin: -65
+
+                                            Image {
                                                 anchors.fill: parent
-                                                anchors.margins: 6
-                                                anchors.bottomMargin: 24   // leave room for the name
-                                                radius: 8
-                                                color: Theme.qsBgAlt
-                                                border.width: wallCell.isCurrent ? 2 : 1
-                                                border.color: wallCell.isCurrent ? Theme.attention : Theme.pillBorder
-                                                clip: true
+                                                anchors.margins: 2
+                                                source: wallCarousel.prevWp
+                                                fillMode: Image.PreserveAspectCrop
+                                                asynchronous: true
+                                            }
 
-                                                Image {
-                                                    anchors.fill: parent
-                                                    anchors.margins: 2
-                                                    source: wallCell.modelData
-                                                    fillMode: Image.PreserveAspectCrop
-                                                    asynchronous: true
-                                                    sourceSize.width: thumb.width   // decode at thumb size
-                                                    sourceSize.height: thumb.height
-                                                }
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: root.selectPrevWallpaper()
+                                            }
+                                        }
 
-                                                MouseArea {
-                                                    anchors.fill: parent
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: WallpaperState.setWallpaper(wallCell.modelData)
+                                        // Right peeking wallpaper card (next)
+                                        Rectangle {
+                                            id: rightPeekCard
+                                            visible: wallCarousel.totalWps > 1
+                                            width: 240
+                                            height: 136
+                                            radius: 10
+                                            color: Theme.qsBgAlt
+                                            border.width: 1
+                                            border.color: Theme.pillBorder
+                                            clip: true
+                                            opacity: 0.5
+                                            scale: 0.88
+                                            z: 1
+
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            anchors.verticalCenterOffset: -4
+                                            anchors.left: centerCard.right
+                                            anchors.leftMargin: -65
+
+                                            Image {
+                                                anchors.fill: parent
+                                                anchors.margins: 2
+                                                source: wallCarousel.nextWp
+                                                fillMode: Image.PreserveAspectCrop
+                                                asynchronous: true
+                                            }
+
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: root.selectNextWallpaper()
+                                            }
+                                        }
+
+                                        // Center card (currently active wallpaper)
+                                        Rectangle {
+                                            id: centerCard
+                                            width: 270
+                                            height: 152
+                                            radius: 12
+                                            color: Theme.qsBgAlt
+                                            border.width: 2
+                                            border.color: Theme.attention
+                                            clip: true
+                                            z: 3
+
+                                            anchors.horizontalCenter: parent.horizontalCenter
+                                            anchors.horizontalCenterOffset: wallCarousel.dragOffset
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            anchors.verticalCenterOffset: -4
+
+                                            Image {
+                                                anchors.fill: parent
+                                                anchors.margins: 2
+                                                source: wallCarousel.activeWp
+                                                fillMode: Image.PreserveAspectCrop
+                                                asynchronous: true
+                                            }
+
+                                            // Subtitle badge showing wallpaper filename
+                                            Rectangle {
+                                                anchors.horizontalCenter: parent.horizontalCenter
+                                                anchors.bottom: parent.bottom
+                                                anchors.bottomMargin: 8
+                                                width: Math.min(parent.width - 24, nameLabel.contentWidth + 16)
+                                                height: 20
+                                                radius: 10
+                                                color: Theme.qsBg
+                                                opacity: 0.85
+
+                                                Text {
+                                                    id: nameLabel
+                                                    anchors.centerIn: parent
+                                                    text: wallCarousel.activeWp ? wallCarousel.activeWp.split("/").pop() : ""
+                                                    font.family: Theme.fontText
+                                                    font.pixelSize: 10
+                                                    font.bold: true
+                                                    color: Theme.attention
+                                                    elide: Text.ElideMiddle
+                                                    width: parent.width - 12
+                                                    horizontalAlignment: Text.AlignHCenter
                                                 }
                                             }
 
-                                            // File name under the thumbnail.
+                                            // Drag-and-pull mouse interaction
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                hoverEnabled: true
+
+                                                property real pressX: 0
+                                                property bool dragging: false
+
+                                                onPressed: mouse => {
+                                                    pressX = mouse.x
+                                                    dragging = true
+                                                    snapAnim.stop()
+                                                }
+
+                                                onPositionChanged: mouse => {
+                                                    if (dragging) {
+                                                        let diff = mouse.x - pressX
+                                                        wallCarousel.dragOffset = diff * 0.8
+                                                    }
+                                                }
+
+                                                onReleased: mouse => {
+                                                    if (dragging) {
+                                                        dragging = false
+                                                        let offset = wallCarousel.dragOffset
+                                                        if (offset < -40) {
+                                                            root.selectNextWallpaper()
+                                                        } else if (offset > 40) {
+                                                            root.selectPrevWallpaper()
+                                                        }
+                                                        snapAnim.start()
+                                                    }
+                                                }
+
+                                                onCanceled: {
+                                                    dragging = false
+                                                    snapAnim.start()
+                                                }
+                                            }
+                                        }
+
+                                        // Left arrow button
+                                        Rectangle {
+                                            id: prevArrow
+                                            visible: wallCarousel.totalWps > 1
+                                            width: 32
+                                            height: 32
+                                            radius: 16
+                                            color: Theme.qsBgAlt
+                                            border.width: 1
+                                            border.color: Theme.pillBorder
+                                            z: 5
+
+                                            anchors.left: parent.left
+                                            anchors.leftMargin: 12
+                                            anchors.verticalCenter: centerCard.verticalCenter
+
                                             Text {
-                                                anchors.horizontalCenter: parent.horizontalCenter
-                                                anchors.bottom: parent.bottom
-                                                anchors.bottomMargin: 5
-                                                width: parent.width - 12
-                                                text: wallCell.modelData.split("/").pop()
-                                                font.family: Theme.fontText
-                                                font.pixelSize: 10
-                                                elide: Text.ElideRight
-                                                horizontalAlignment: Text.AlignHCenter
-                                                color: wallCell.isCurrent ? Theme.attention : Theme.qsTextMuted
+                                                anchors.centerIn: parent
+                                                text: "chevron_left"
+                                                font.family: Theme.fontIcons
+                                                font.pixelSize: 18
+                                                color: Theme.qsText
+                                            }
+
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: root.selectPrevWallpaper()
+                                            }
+                                        }
+
+                                        // Right arrow button
+                                        Rectangle {
+                                            id: nextArrow
+                                            visible: wallCarousel.totalWps > 1
+                                            width: 32
+                                            height: 32
+                                            radius: 16
+                                            color: Theme.qsBgAlt
+                                            border.width: 1
+                                            border.color: Theme.pillBorder
+                                            z: 5
+
+                                            anchors.right: parent.right
+                                            anchors.rightMargin: 12
+                                            anchors.verticalCenter: centerCard.verticalCenter
+
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: "chevron_right"
+                                                font.family: Theme.fontIcons
+                                                font.pixelSize: 18
+                                                color: Theme.qsText
+                                            }
+
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: root.selectNextWallpaper()
                                             }
                                         }
                                     }
