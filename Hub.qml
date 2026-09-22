@@ -28,6 +28,7 @@
 //    switchable via `animStyle`.
 // =============================================================================
 import Quickshell
+import Quickshell.Wayland
 import Quickshell.Io
 import Quickshell.Services.Pipewire
 import Quickshell.Hyprland
@@ -554,6 +555,9 @@ Pill {
         screen: root.screen
         visible: false
         color: "transparent"
+
+        WlrLayershell.layer: WlrLayer.Overlay
+        WlrLayershell.exclusionMode: ExclusionMode.Ignore
 
         // When the window hides (close animation finished), stop everything
         // and rest every animated property, so reopening always starts fresh.
