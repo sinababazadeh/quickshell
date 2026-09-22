@@ -35,11 +35,17 @@ launches `quickshell`). After editing ANY `.qml` file you must reload:
     Workspaces.qml      Workspace pips + hyprexpo overview button.
     Volume.qml          Audio volume pill (click = mute, scroll = level).
     Dictation.qml       Speech-to-text (hyprwhspr) mic pill.
+    NotificationState.qml Global notifications daemon & store singleton. Implements
+                        freedesktop notifications via Quickshell.Services.Notifications,
+                        groups alerts by application (e.g. Kitty ×10), and drives the
+                        Dynamic Island banner alert.
     Hub.qml             Clock pill that expands into a floating 630×288 pill-shaped
                         window. Reclaims top screen space with a browser-style top tab bar
-                        (Calendar, Theme, Settings). Ships with:
+                        (Calendar, Theme, Notifications, Settings). Ships with:
                         - **Calendar**: Clock, Tabriz weather, and interactive month calendar. Always the default tab on open.
                         - **Theme**: Wallpaper coverflow carousel with peeking corner cards, left/right navigation arrows, and pull-to-drag.
+                        - **Notifications**: Unattended alerts grouped by application with count badges (e.g. ×10), expand/collapse history accordion, and clear actions.
+                        - **Dynamic Island Banner**: When an alert pops up, the bar clock pill expands smoothly in length, displays the app's icon and message, and automatically shrinks back to the clock pill after 4.5s.
                         - **Settings**: Inline action row (Wi-Fi, Bluetooth, Lock, Sleep, Power) and clean volume/mic/brightness sliders (volume boost to 150% without percentage text).
 
     QuickSettings.qml   The whole dropdown PanelWindow (3 sub-views).

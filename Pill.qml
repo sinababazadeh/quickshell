@@ -50,13 +50,20 @@ Rectangle {
     readonly property real textSegWidth: textSeg.width
 
     // --- The Rectangle's own geometry ------------------------------------------
-    implicitWidth: iconSeg.width + textSeg.width  // total width = both segments
+    implicitWidth: iconSeg.width + (root.hasLabel ? Math.min(root.maxLabelWidth, labelTxt.implicitWidth + 16) : 0)
     implicitHeight: Theme.pillHeight              // height comes from the theme
     radius: 0
     color: "transparent"  // the root itself paints nothing; children do
 
+    Behavior on implicitWidth {
+        NumberAnimation {
+            duration: 320
+            easing.type: Easing.OutCubic
+        }
+    }
+
     // --- LEFT ZONE: icon segment ------------------------------------------------
-    // A colored rectangle holding the icon glyph. The LEFT corners are rounded
+    // A colored rectangle holding the icon glyph or image. The LEFT corners are rounded
     // (a full half-circle cap); the RIGHT edge is flat so it butts cleanly
     // against the label segment. If there is no label, both sides round off
     // (so the icon segment becomes a complete capsule on its own).
@@ -64,21 +71,33 @@ Rectangle {
         id: iconSeg
         visible: root.hasIcon
         opacity: root.contentOpacity
-        width: visible ? iconTxt.width + 14 : 0   // glyph width + padding
+        width: visible ? Math.max(28, (isPathIcon ? 28 : iconTxt.width + 14)) : 0
         height: parent.height
         anchors.left: parent.left
         anchors.verticalCenter: parent.verticalCenter
         color: root.bgColor
+
+        readonly property bool isPathIcon: root.icon.startsWith("/") || root.icon.startsWith("file:")
 
         topLeftRadius: height / 2     // left cap (half-circle)
         bottomLeftRadius: height / 2
         topRightRadius: root.hasLabel ? 0 : height / 2  // flat when a label exists
         bottomRightRadius: root.hasLabel ? 0 : height / 2
 
+        Image {
+            anchors.centerIn: parent
+            visible: root.hasIcon && iconSeg.isPathIcon
+            source: iconSeg.isPathIcon ? root.icon : ""
+            width: 16
+            height: 16
+            fillMode: Image.PreserveAspectFit
+            asynchronous: true
+        }
+
         Text {
             id: iconTxt
             anchors.centerIn: parent
-            visible: root.hasIcon
+            visible: root.hasIcon && !iconSeg.isPathIcon
             text: root.icon
             color: root.iconColor
             font.family: Theme.fontIcons  // the Material icon glyph font
@@ -94,11 +113,12 @@ Rectangle {
         id: textSeg
         visible: root.hasLabel
         opacity: root.contentOpacity
-        width: visible ? labelTxt.implicitWidth + 8 : 0
         height: parent.height
         anchors.left: iconSeg.right     // start exactly where the icon ends
+        anchors.right: parent.right     // stretch with pill width
         anchors.verticalCenter: parent.verticalCenter
         color: root.labelBg
+        clip: true
 
         topLeftRadius: root.hasIcon ? 0 : height / 2
         bottomLeftRadius: root.hasIcon ? 0 : height / 2
@@ -114,7 +134,7 @@ Rectangle {
             font.family: Theme.fontText
             font.pixelSize: 14
             elide: Text.ElideRight                 // "…" if too long
-            width: Math.min(implicitWidth, root.maxLabelWidth)
+            width: Math.min(implicitWidth, Math.max(0, parent.width - 12))
         }
     }
 

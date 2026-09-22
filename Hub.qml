@@ -121,6 +121,40 @@ Pill {
         }
     }
 
+    // ─── Dynamic Island Notification Banner ────────────────────────────────────
+    property bool bannerActive: false
+    property string bannerIcon: "notifications"
+    property string bannerText: ""
+
+    Timer {
+        id: bannerTimer
+        interval: 4500   // banner stays open for 4.5 seconds
+        repeat: false
+        onTriggered: {
+            root.bannerActive = false
+        }
+    }
+
+    Connections {
+        target: NotificationState
+        function onNotificationReceived(notif) {
+            // When a notification arrives:
+            // If the Hub window is NOT open, morph the bar pill into a Dynamic Island banner
+            if (!popup.visible) {
+                root.bannerIcon = NotificationState.resolveIcon(notif.appName, notif.appIcon)
+                let prefix = notif.appName ? (notif.appName + ": ") : ""
+                let bodyStr = notif.summary || notif.body || "New alert"
+                let group = NotificationState.getGroup(notif.appName)
+                if (group && group.count > 1) {
+                    prefix = notif.appName + " (" + group.count + "): "
+                }
+                root.bannerText = prefix + bodyStr
+                root.bannerActive = true
+                bannerTimer.restart()
+            }
+        }
+    }
+
     // ─── Settings sub-pages (opened by the toggle ">" chevrons) ──────────────────
     // "main" = sliders/toggles · "wifi"/"bluetooth" = the detail lists.
     // The pages live as extra children of the tab StackLayout (see below).
@@ -365,17 +399,28 @@ Pill {
         }
     }
 
-    // ─── The idle face: a plain clock pill ──────────────────────────────────────
-    icon: "nest_clock_farsight_analog"
-    label: Qt.formatDateTime(clock.date, "hh:mm AP")
-    labelBg: root.open ? Theme.indigo : Theme.primary   // tint while open
+    // ─── The idle face: a plain clock pill or active notification banner ─────────
+    icon: root.bannerActive ? root.bannerIcon : "nest_clock_farsight_analog"
+    label: root.bannerActive ? root.bannerText : Qt.formatDateTime(clock.date, "hh:mm AP")
+    bgColor: root.bannerActive ? Theme.attention : Theme.plum
+    iconColor: root.bannerActive ? Theme.qsOnAccent : Theme.ink
+    labelBg: root.open ? Theme.indigo : Theme.primary
+    textColor: root.bannerActive ? Theme.attention : Theme.ink
 
     // ─── Click = expand / collapse ───────────────────────────────────────────────
     MouseArea {
         id: clickArea
         anchors.fill: parent
         cursorShape: Qt.PointingHandCursor
-        onClicked: root.toggle()
+        onClicked: {
+            if (root.bannerActive) {
+                root.bannerActive = false
+                bannerTimer.stop()
+                root.openTab("notifications")
+            } else {
+                root.toggle()
+            }
+        }
     }
 
     function toggle() {
@@ -391,14 +436,14 @@ Pill {
                 root.setTab(tab)
             }
         } else {
-            root.setTab(tab)
             root.expand()
+            root.setTab(tab)
         }
     }
 
     function openTab(tab) {
-        root.setTab(tab)
         if (!popup.visible) root.expand()
+        root.setTab(tab)
     }
 
     function expand() {
@@ -1021,6 +1066,87 @@ Pill {
                                 }
                             }
 
+                            // ── Notifications tab ──
+                            Rectangle {
+                                height: 26
+                                implicitWidth: tabNotifIcon.width + tabNotifLabel.width
+                                color: "transparent"
+
+                                Rectangle {
+                                    id: tabNotifIcon
+                                    width: 26
+                                    height: parent.height
+                                    anchors.left: parent.left
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    color: root.currentTab === "notifications" ? Theme.attention : Theme.plum
+                                    topLeftRadius: height / 2
+                                    bottomLeftRadius: height / 2
+                                    topRightRadius: 0
+                                    bottomRightRadius: 0
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: "notifications"
+                                        font.family: Theme.fontIcons
+                                        font.pixelSize: 13
+                                        color: root.currentTab === "notifications" ? Theme.qsOnAccent : Theme.ink
+                                        leftPadding: 1
+                                    }
+                                }
+
+                                Rectangle {
+                                    id: tabNotifLabel
+                                    height: parent.height
+                                    width: tabNotifTxt.implicitWidth + (NotificationState.totalCount > 0 ? notifBadge.width + 16 : 14)
+                                    anchors.left: tabNotifIcon.right
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    color: root.currentTab === "notifications" ? Theme.attention : Theme.primary
+                                    topLeftRadius: 0
+                                    bottomLeftRadius: 0
+                                    topRightRadius: height / 2
+                                    bottomRightRadius: height / 2
+
+                                    RowLayout {
+                                        anchors.centerIn: parent
+                                        spacing: 4
+
+                                        Text {
+                                            id: tabNotifTxt
+                                            text: "Notifications"
+                                            font.family: Theme.fontText
+                                            font.pixelSize: 12
+                                            font.bold: true
+                                            color: root.currentTab === "notifications" ? Theme.qsOnAccent : Theme.ink
+                                        }
+
+                                        Rectangle {
+                                            id: notifBadge
+                                            visible: NotificationState.totalCount > 0
+                                            height: 14
+                                            width: Math.max(14, notifBadgeTxt.implicitWidth + 8)
+                                            radius: height / 2
+                                            color: root.currentTab === "notifications" ? Theme.qsBg : Theme.attention
+
+                                            Text {
+                                                id: notifBadgeTxt
+                                                anchors.centerIn: parent
+                                                text: NotificationState.totalCount
+                                                font.family: Theme.fontText
+                                                font.pixelSize: 9
+                                                font.bold: true
+                                                color: root.currentTab === "notifications" ? Theme.attention : Theme.qsOnAccent
+                                            }
+                                        }
+                                    }
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: root.setTab("notifications")
+                                }
+                            }
+
                             // ── Settings tab ──
                             Rectangle {
                                 height: 26
@@ -1105,7 +1231,8 @@ Pill {
                                 // currentTab picks the TAB; while "settings" is
                                 // active, hubPage picks the PAGE:
                                 //   0 main · 1 wifi · 2 bluetooth · 3 theme · 4 calendar
-                                currentIndex: root.currentTab === "calendar" ? 4
+                                currentIndex: root.currentTab === "notifications" ? 5
+                                            : root.currentTab === "calendar" ? 4
                                             : root.currentTab === "theme" ? 3
                                             : root.hubPage === "wifi" ? 1
                                             : root.hubPage === "bluetooth" ? 2 : 0
@@ -2584,6 +2711,375 @@ Pill {
                                         Layout.fillWidth: true
                                         Layout.preferredWidth: 210
                                         Layout.fillHeight: true
+                                    }
+                                }
+                            }
+
+                            // =====================================================
+                            //  VIEW 5 — NOTIFICATIONS (Grouped by Application)
+                            // =====================================================
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                spacing: 8
+
+                                // ── Top Header Row ──
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+
+                                    Text {
+                                        text: "Unattended Notifications"
+                                        font.family: Theme.fontText
+                                        font.pixelSize: 13
+                                        font.bold: true
+                                        color: Theme.qsText
+                                    }
+
+                                    Rectangle {
+                                        visible: NotificationState.totalCount > 0
+                                        radius: 8
+                                        color: Theme.attention
+                                        implicitHeight: 18
+                                        implicitWidth: totalBadgeTxt.implicitWidth + 10
+
+                                        Text {
+                                            id: totalBadgeTxt
+                                            anchors.centerIn: parent
+                                            text: NotificationState.totalCount + (NotificationState.totalCount === 1 ? " alert" : " alerts")
+                                            font.family: Theme.fontText
+                                            font.pixelSize: 9
+                                            font.bold: true
+                                            color: Theme.qsOnAccent
+                                        }
+                                    }
+
+                                    Item { Layout.fillWidth: true }
+
+                                    // Quick test simulation button
+                                    Rectangle {
+                                        implicitHeight: 22
+                                        implicitWidth: testBtnRow.implicitWidth + 14
+                                        radius: 11
+                                        color: Theme.qsBgAlt
+                                        border.width: 1
+                                        border.color: Theme.pillBorder
+
+                                        RowLayout {
+                                            id: testBtnRow
+                                            anchors.centerIn: parent
+                                            spacing: 4
+                                            Text {
+                                                text: "terminal"
+                                                font.family: Theme.fontIcons
+                                                font.pixelSize: 11
+                                                color: Theme.attention
+                                            }
+                                            Text {
+                                                text: "Simulate Kitty"
+                                                font.family: Theme.fontText
+                                                font.pixelSize: 10
+                                                font.bold: true
+                                                color: Theme.qsText
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                NotificationState.sendTestNotification("kitty", "Command finished", "Build completed with 0 errors in 1.4s")
+                                            }
+                                        }
+                                    }
+
+                                    // Clear all button
+                                    Rectangle {
+                                        visible: NotificationState.groups.length > 0
+                                        implicitHeight: 22
+                                        implicitWidth: clearAllRow.implicitWidth + 14
+                                        radius: 11
+                                        color: Theme.qsBgAlt
+                                        border.width: 1
+                                        border.color: Theme.pillBorder
+
+                                        RowLayout {
+                                            id: clearAllRow
+                                            anchors.centerIn: parent
+                                            spacing: 4
+                                            Text {
+                                                text: "delete_sweep"
+                                                font.family: Theme.fontIcons
+                                                font.pixelSize: 12
+                                                color: Theme.attention
+                                            }
+                                            Text {
+                                                text: "Clear all"
+                                                font.family: Theme.fontText
+                                                font.pixelSize: 10
+                                                font.bold: true
+                                                color: Theme.attention
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: NotificationState.clearAll()
+                                        }
+                                    }
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    implicitHeight: 1
+                                    color: Theme.pillBorder
+                                }
+
+                                // ── Empty State ──
+                                Item {
+                                    visible: NotificationState.groups.length === 0
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+
+                                    ColumnLayout {
+                                        anchors.centerIn: parent
+                                        spacing: 4
+
+                                        Text {
+                                            text: "notifications_paused"
+                                            font.family: Theme.fontIcons
+                                            font.pixelSize: 32
+                                            color: Theme.qsTextMuted
+                                            Layout.alignment: Qt.AlignHCenter
+                                        }
+
+                                        Text {
+                                            text: "No unattended notifications"
+                                            font.family: Theme.fontText
+                                            font.pixelSize: 12
+                                            font.bold: true
+                                            color: Theme.qsText
+                                            Layout.alignment: Qt.AlignHCenter
+                                        }
+
+                                        Text {
+                                            text: "Alerts will automatically be grouped by application"
+                                            font.family: Theme.fontText
+                                            font.pixelSize: 10
+                                            color: Theme.qsTextMuted
+                                            Layout.alignment: Qt.AlignHCenter
+                                        }
+                                    }
+                                }
+
+                                // ── Grouped Notifications List ──
+                                ListView {
+                                    visible: NotificationState.groups.length > 0
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    clip: true
+                                    spacing: 6
+                                    boundsBehavior: Flickable.StopAtBounds
+                                    model: NotificationState.groups
+
+                                    delegate: Rectangle {
+                                        id: groupCard
+                                        required property var modelData
+                                        readonly property var group: modelData
+
+                                        width: ListView.view.width
+                                        implicitHeight: cardCol.implicitHeight + 12
+                                        radius: 8
+                                        color: Theme.qsBgAlt
+                                        border.width: 1
+                                        border.color: Theme.pillBorder
+
+                                        ColumnLayout {
+                                            id: cardCol
+                                            anchors.fill: parent
+                                            anchors.margins: 7
+                                            spacing: 4
+
+                                            // App header row
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 6
+
+                                                // App icon pill
+                                                Rectangle {
+                                                    width: 22
+                                                    height: 22
+                                                    radius: 11
+                                                    color: Theme.plum
+
+                                                    Text {
+                                                        anchors.centerIn: parent
+                                                        text: groupCard.group.appIcon || "notifications"
+                                                        font.family: Theme.fontIcons
+                                                        font.pixelSize: 13
+                                                        color: Theme.ink
+                                                    }
+                                                }
+
+                                                // App Name
+                                                Text {
+                                                    text: groupCard.group.appName
+                                                    font.family: Theme.fontText
+                                                    font.pixelSize: 12
+                                                    font.bold: true
+                                                    color: Theme.qsText
+                                                }
+
+                                                // Distinct group count badge (e.g. "× 10" or "10")
+                                                Rectangle {
+                                                    radius: 8
+                                                    color: Theme.attention
+                                                    implicitHeight: 16
+                                                    implicitWidth: countBadgeTxt.implicitWidth + 10
+
+                                                    Text {
+                                                        id: countBadgeTxt
+                                                        anchors.centerIn: parent
+                                                        text: groupCard.group.count > 1 ? ("× " + groupCard.group.count) : "1"
+                                                        font.family: Theme.fontText
+                                                        font.pixelSize: 9
+                                                        font.bold: true
+                                                        color: Theme.qsOnAccent
+                                                    }
+                                                }
+
+                                                Item { Layout.fillWidth: true }
+
+                                                // Timestamp of latest notification
+                                                Text {
+                                                    text: groupCard.group.latestTime || ""
+                                                    font.family: Theme.fontText
+                                                    font.pixelSize: 10
+                                                    color: Theme.qsTextMuted
+                                                }
+
+                                                // Expand/collapse accordion button (if count > 1)
+                                                Rectangle {
+                                                    visible: groupCard.group.count > 1
+                                                    width: 20
+                                                    height: 20
+                                                    radius: 10
+                                                    color: "transparent"
+
+                                                    Text {
+                                                        anchors.centerIn: parent
+                                                        text: groupCard.group.expanded ? "expand_less" : "expand_more"
+                                                        font.family: Theme.fontIcons
+                                                        font.pixelSize: 15
+                                                        color: Theme.qsTextMuted
+                                                    }
+
+                                                    MouseArea {
+                                                        anchors.fill: parent
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: NotificationState.toggleGroupExpanded(groupCard.group.appName)
+                                                    }
+                                                }
+
+                                                // Dismiss this application's notifications
+                                                Rectangle {
+                                                    width: 20
+                                                    height: 20
+                                                    radius: 10
+                                                    color: "transparent"
+
+                                                    Text {
+                                                        anchors.centerIn: parent
+                                                        text: "close"
+                                                        font.family: Theme.fontIcons
+                                                        font.pixelSize: 13
+                                                        color: Theme.qsTextMuted
+                                                    }
+
+                                                    MouseArea {
+                                                        anchors.fill: parent
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: NotificationState.clearGroup(groupCard.group.appName)
+                                                    }
+                                                }
+                                            }
+
+                                            // Latest notification message
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 1
+
+                                                Text {
+                                                    visible: (groupCard.group.latestSummary || "") !== ""
+                                                    text: groupCard.group.latestSummary || ""
+                                                    font.family: Theme.fontText
+                                                    font.pixelSize: 11
+                                                    font.bold: true
+                                                    color: Theme.qsText
+                                                    elide: Text.ElideRight
+                                                    Layout.fillWidth: true
+                                                }
+
+                                                Text {
+                                                    visible: (groupCard.group.latestBody || "") !== ""
+                                                    text: groupCard.group.latestBody || ""
+                                                    font.family: Theme.fontText
+                                                    font.pixelSize: 10
+                                                    color: Theme.qsTextMuted
+                                                    elide: Text.ElideRight
+                                                    Layout.fillWidth: true
+                                                }
+                                            }
+
+                                            // Accordion: prior notifications list from this app
+                                            ColumnLayout {
+                                                visible: groupCard.group.expanded && groupCard.group.count > 1
+                                                Layout.fillWidth: true
+                                                spacing: 3
+
+                                                Rectangle {
+                                                    Layout.fillWidth: true
+                                                    implicitHeight: 1
+                                                    color: Theme.pillBorder
+                                                    opacity: 0.4
+                                                }
+
+                                                Repeater {
+                                                    model: (groupCard.group.items || []).slice(1)
+
+                                                    delegate: RowLayout {
+                                                        required property var modelData
+                                                        readonly property var itemData: modelData
+                                                        Layout.fillWidth: true
+                                                        spacing: 6
+
+                                                        Text {
+                                                            text: "•"
+                                                            font.family: Theme.fontText
+                                                            font.pixelSize: 10
+                                                            color: Theme.attention
+                                                        }
+
+                                                        Text {
+                                                            text: (itemData.summary ? itemData.summary + ": " : "") + (itemData.body || "")
+                                                            font.family: Theme.fontText
+                                                            font.pixelSize: 10
+                                                            color: Theme.qsTextMuted
+                                                            elide: Text.ElideRight
+                                                            Layout.fillWidth: true
+                                                        }
+
+                                                        Text {
+                                                            text: itemData.time || ""
+                                                            font.family: Theme.fontText
+                                                            font.pixelSize: 9
+                                                            color: Theme.qsTextMuted
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }

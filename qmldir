@@ -23,6 +23,9 @@
 # `Theme.barBg`, etc. without creating an instance. Edit values in Theme.qml.
 singleton Theme 1.0 Theme.qml
 
+# --- Notifications daemon & store (grouped by application) -------------------
+singleton NotificationState 1.0 NotificationState.qml
+
 # --- The wallpaper (drawn by quickshell itself — no hyprpaper) ----------------
 singleton WallpaperState 1.0 WallpaperState.qml  # active path + persistence
 singleton PaletteState   1.0 PaletteState.qml    # per-wallpaper color palettes
