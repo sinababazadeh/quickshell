@@ -31,36 +31,39 @@ import QtQuick
 
 QtObject {
     // =========================================================================
-    // 1. THE TEN COLOR SLOTS  (the raw palette this whole UI is built from)
+    // 1. THE EIGHT COLOR SLOTS  (mapped directly to the actual UI objects)
     // =========================================================================
 
-    property color bg:        "#0f0b26"  // 1  bg        darkest background / surfaces
-    property color indigo:    "#1e0d8c"  // 2  indigo    elevated surfaces
-    property color violet:    "#170973"  // 3  violet    deep secondary surfaces
-    property color primary:   "#140a4e"  // 4  primary   dominant capsule color
-    property color attention: "#f27289"  // 5  attention accent / active / danger
-    property color plum:      "#2f1ea0"  // 6  plum      icon-segment background
-    property color ink:       "#f5f5f5"  // 7  ink       main text & icon color
-    property color cream:     "#d8d8ff"  // 8  cream     secondary text
-    property color lavender:  "#a3a1f9"  // 9  lavender  muted / faint text
-    property color border:    "transparent" // 10 border  outlines & dividers
+    // Top Bar Capsules
+    property color plum:      "#2f1ea0"  // [Pill Icon Segment]       Left square/icon zone of pills
+    property color primary:   "#140a4e"  // [Pill Body / Capsule]     Right capsule body & label segment
+
+    // Popup Menus
+    property color violet:    "#170973"  // [Menu Card Background]    Hub & Quick Settings popup windows
+
+    // Highlights & Workspaces
+    property color attention: "#f27289"  // [Active Workspace & Accent] Focused workspace pip & slider fills
+    property color indigo:    "#1e0d8c"  // [Occupied Workspace]      Workspace pips with open windows
+    property color bg:        "#0f0b26"  // [Empty Workspace]         Workspace pips with no open windows
+
+    // Typography & Glyphs
+    property color ink:       "#f5f5f5"  // [Text & Icons]            Main typography & icon glyphs
+    property color lavender:  "#a3a1f9"  // [Muted Text]              Secondary labels & subdued text
+
+    // Legacy / Decorative Aliases
+    property color cream:     "#d8d8ff"  // Kept for backward compatibility with older theme configs
+    property color border:    "transparent" // Decorative outlines & dividers
 
     // ─── PALETTE TRANSITIONS ────────────────────────────────────────────────────
-    // The slots above are WRITABLE on purpose: the palette engine
-    // (PaletteState.qml) rewrites them whenever the wallpaper — and the color
-    // palette attached to it — changes. The Behaviors below make every color
-    // in the whole UI FADE to its new value instead of snapping, in sync with
-    // the wallpaper's image crossfade. All semantic aliases below are bindings
-    // onto these slots, so they follow the animated values frame by frame.
-    Behavior on bg        { ColorAnimation { duration: 600 } }
-    Behavior on indigo    { ColorAnimation { duration: 600 } }
-    Behavior on violet    { ColorAnimation { duration: 600 } }
-    Behavior on primary   { ColorAnimation { duration: 600 } }
-    Behavior on attention { ColorAnimation { duration: 600 } }
     Behavior on plum      { ColorAnimation { duration: 600 } }
+    Behavior on primary   { ColorAnimation { duration: 600 } }
+    Behavior on violet    { ColorAnimation { duration: 600 } }
+    Behavior on attention { ColorAnimation { duration: 600 } }
+    Behavior on indigo    { ColorAnimation { duration: 600 } }
+    Behavior on bg        { ColorAnimation { duration: 600 } }
     Behavior on ink       { ColorAnimation { duration: 600 } }
-    Behavior on cream     { ColorAnimation { duration: 600 } }
     Behavior on lavender  { ColorAnimation { duration: 600 } }
+    Behavior on cream     { ColorAnimation { duration: 600 } }
     Behavior on border    { ColorAnimation { duration: 600 } }
 
     // ─── Alternate palette (commented out — your "new colors" idea) ───────────

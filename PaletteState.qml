@@ -45,11 +45,11 @@ Item {
     // Revision counter to notify QML bindings when palettes change
     property int revision: 0
 
-    // The Theme color slots a palette defines ("border" is left alone — it is
-    // decorative transparency everywhere in this config).
+    // The Theme color slots representing actual UI objects.
+    // Redundant slots (e.g. duplicate secondary text 'cream') have been consolidated.
     readonly property var slotNames: [
-        "bg", "indigo", "violet", "primary", "attention",
-        "plum", "ink", "cream", "lavender"
+        "plum", "primary", "violet", "attention",
+        "indigo", "bg", "ink", "lavender"
     ]
 
     // ─── Startup: load the registry, then apply the active wallpaper's palette ──
@@ -124,6 +124,9 @@ Item {
         for (let i = 0; i < root.slotNames.length; i++) {
             let name = root.slotNames[i]
             if (entry.palette[name]) Theme[name] = entry.palette[name]
+        }
+        if (entry.palette["lavender"] && Theme.cream !== undefined) {
+            Theme.cream = entry.palette["lavender"]
         }
     }
 

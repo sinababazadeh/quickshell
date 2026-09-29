@@ -180,16 +180,16 @@ Pill {
 
     function slotRoleName(slot) {
         switch (slot) {
-            case "bg":        return "Base Background"
-            case "indigo":    return "Elevated Surface"
-            case "violet":    return "Secondary Surface"
-            case "primary":   return "Primary Capsule"
-            case "attention": return "Accent & Active"
-            case "plum":      return "Icon Badge"
-            case "ink":       return "Main Text / Ink"
-            case "cream":     return "Secondary Text"
+            case "plum":      return "Pill Icon Segment"
+            case "primary":   return "Pill Body / Capsule"
+            case "violet":    return "Menu Card Background"
+            case "attention": return "Active Workspace & Accent"
+            case "indigo":    return "Occupied Workspace"
+            case "bg":        return "Empty Workspace"
+            case "ink":       return "Text & Icons"
             case "lavender":  return "Muted Text"
-            default:          return slot || "Color Slot"
+            case "cream":     return "Muted Text (Legacy)"
+            default:          return slot || "Color Role"
         }
     }
 

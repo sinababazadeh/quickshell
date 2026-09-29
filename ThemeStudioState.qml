@@ -15,7 +15,7 @@ Item {
     property string wallpaperPath: ""
 
     // Which color slot is currently selected for the crosshair picker
-    property string activeSlot: "bg"
+    property string activeSlot: "plum"
 
     // Live working palette being tuned
     property var workingPalette: ({})
@@ -23,17 +23,20 @@ Item {
     // Revision counter to trigger reactive QML updates
     property int revision: 0
 
-    // Complete list of theme color slots with clean, descriptive labels
+    // Auto-tune mode signal for wallpaper analysis
+    signal requestAutoExtract(string mode)
+
+    // Complete list of theme color slots named strictly by the ACTUAL UI OBJECTS they are attached to.
+    // Redundant slots (like duplicate secondary text "cream") have been eliminated.
     readonly property var slots: [
-        { id: "bg",        name: "Background",      icon: "wallpaper" },
-        { id: "primary",   name: "Primary Capsule", icon: "category" },
-        { id: "plum",      name: "Accent Pill",     icon: "token" },
-        { id: "attention", name: "Highlight / WS",  icon: "stars" },
-        { id: "indigo",    name: "Elevated Card",   icon: "layers" },
-        { id: "violet",    name: "Deep Surface",    icon: "contrast" },
-        { id: "ink",       name: "Text & Ink",      icon: "title" },
-        { id: "cream",     name: "Secondary Text",  icon: "format_paint" },
-        { id: "lavender",  name: "Muted Text",      icon: "blur_on" }
+        { id: "plum",      name: "Pill Icon Segment",        objectCategory: "Top Bar",      desc: "Left icon square of bar pills",          icon: "token" },
+        { id: "primary",   name: "Pill Body / Capsule",      objectCategory: "Top Bar",      desc: "Main label & body of bar pills",         icon: "category" },
+        { id: "violet",    name: "Menu Card Background",     objectCategory: "Popup Window", desc: "Hub & Quick Settings window cards",      icon: "dashboard" },
+        { id: "attention", name: "Active Workspace & Accent", objectCategory: "Highlights",   desc: "Focused workspace pip & slider fills",   icon: "stars" },
+        { id: "indigo",    name: "Occupied Workspace",       objectCategory: "Workspaces",   desc: "Workspace pips with open windows",       icon: "layers" },
+        { id: "bg",        name: "Empty Workspace",          objectCategory: "Workspaces",   desc: "Inactive workspace pips",                icon: "radio_button_unchecked" },
+        { id: "ink",       name: "Text & Icons",             objectCategory: "Typography",   desc: "Main text labels & icon glyphs",         icon: "title" },
+        { id: "lavender",  name: "Muted Text",               objectCategory: "Typography",   desc: "Secondary/dim text & subtitles",         icon: "format_color_text" }
     ]
 
     function open(path) {
@@ -44,7 +47,7 @@ Item {
             pal[s] = PaletteState.colorFor(wallpaperPath, s)
         }
         workingPalette = pal
-        activeSlot = "bg"
+        activeSlot = "plum"
         revision++
         active = true
     }
@@ -57,10 +60,30 @@ Item {
 
     function setSlotColor(slot, hex) {
         if (!slot || !hex) return
-        workingPalette[slot] = hex.toString().toUpperCase()
+        let formattedHex = hex.toString().toUpperCase()
+        workingPalette[slot] = formattedHex
         // Instantly update Theme so all components in the simulated workstation live-recolor
         if (Theme[slot] !== undefined) {
-            Theme[slot] = hex
+            Theme[slot] = formattedHex
+        }
+        // If updating lavender (muted text), keep cream in sync for legacy components
+        if (slot === "lavender" && Theme.cream !== undefined) {
+            Theme.cream = formattedHex
+        }
+        revision++
+    }
+
+    function applyFullPalette(newPalette) {
+        if (!newPalette) return
+        for (let key in newPalette) {
+            let hex = newPalette[key].toString().toUpperCase()
+            workingPalette[key] = hex
+            if (Theme[key] !== undefined) {
+                Theme[key] = hex
+            }
+        }
+        if (Theme.cream !== undefined && workingPalette["lavender"]) {
+            Theme.cream = workingPalette["lavender"]
         }
         revision++
     }

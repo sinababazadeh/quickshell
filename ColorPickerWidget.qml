@@ -4,11 +4,20 @@
 //  Layout:
 //     • Top drag handle pill (click & drag anywhere across the screen)
 //     • Title & instructions
-//     • List of color role pills (Background, Primary, Accent, Highlight, etc.)
+//     • Automated Color Picker bar (one-click wallpaper extraction with modes)
+//     • List of color role pills representing the ACTUAL OBJECTS they are attached to:
+//       - Pill Icon Segment (Top Bar capsule icon square)
+//       - Pill Body / Capsule (Top Bar capsule body/label)
+//       - Menu Card Background (Hub & Quick Settings windows)
+//       - Active Workspace & Accent (Focused pip & slider fills)
+//       - Occupied Workspace (Pips with open windows)
+//       - Empty Workspace (Inactive workspace pips)
+//       - Text & Icons (Typography & glyphs)
+//       - Muted Text (Secondary labels & hints)
 //       - Left segment of pill = live color swatch of currently picked color
-//       - Right segment = role name
-//       - Active pill has glowing/pulsing indication
-//     • Hue/Saturation fine-tune spectrum strip
+//       - Right segment = actual object name & category
+//       - Active pill has glowing/pulsing indication and live crosshair tuning
+//     • Hue/Saturation fine-tune spectrum strip + Lightness slider
 //     • Save & Apply Changes button + Cancel button
 // =============================================================================
 import QtQuick
@@ -17,7 +26,7 @@ import QtQuick.Layouts
 Rectangle {
     id: root
 
-    width: 320
+    width: 340
     implicitHeight: mainCol.implicitHeight + 28
     radius: 18
     color: Theme.qsBg !== "transparent" ? Theme.qsBg : Qt.rgba(0.07, 0.05, 0.16, 0.94)
@@ -41,7 +50,7 @@ Rectangle {
         id: mainCol
         anchors.fill: parent
         anchors.margins: 14
-        spacing: 10
+        spacing: 9
 
         // ─── 1. TOP DRAG HANDLE BUTTON ──────────────────────────────────────────
         // Centered button at the top where user clicks and drags the whole widget
@@ -86,7 +95,7 @@ Rectangle {
             HoverLift {}
         }
 
-        // ─── 2. HEADER & WALLPAPER INFO ─────────────────────────────────────────
+        // ─── 2. HEADER & INSTRUCTIONS ───────────────────────────────────────────
         ColumnLayout {
             Layout.fillWidth: true
             spacing: 2
@@ -100,12 +109,116 @@ Rectangle {
             }
 
             Text {
-                text: "Select a color role · move crosshair over wallpaper to sample"
+                text: "Colors mapped directly to UI objects · Drag crosshair to tune"
                 font.family: Theme.fontText
                 font.pixelSize: 9
                 color: Theme.qsTextMuted
                 wrapMode: Text.WordWrap
                 Layout.fillWidth: true
+            }
+        }
+
+        // ─── 3. AUTOMATED COLOR PICKER (AUTO-EXTRACT WITH TUNING) ───────────────
+        Rectangle {
+            Layout.fillWidth: true
+            height: 32
+            radius: 8
+            color: Qt.rgba(1, 1, 1, 0.05)
+            border.width: 1
+            border.color: Theme.pillBorder
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 6
+                anchors.rightMargin: 6
+                spacing: 4
+
+                // Magic Auto-Extract button
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 24
+                    radius: 12
+                    color: Theme.primary
+                    border.width: 1
+                    border.color: Theme.attention
+
+                    RowLayout {
+                        anchors.centerIn: parent
+                        spacing: 4
+                        Text {
+                            text: "auto_fix_high"
+                            font.family: Theme.fontIcons
+                            font.pixelSize: 13
+                            color: Theme.attention
+                        }
+                        Text {
+                            text: "Auto-Extract"
+                            font.family: Theme.fontText
+                            font.pixelSize: 10
+                            font.bold: true
+                            color: Theme.ink
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: ThemeStudioState.requestAutoExtract("balanced")
+                    }
+
+                    HoverLift {}
+                }
+
+                // Flavor Presets: Vibrant / Deep
+                Rectangle {
+                    width: 58
+                    height: 22
+                    radius: 11
+                    color: Theme.plum
+                    border.width: 1
+                    border.color: Theme.pillBorder
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Vibrant"
+                        font.family: Theme.fontText
+                        font.pixelSize: 9
+                        font.bold: true
+                        color: Theme.ink
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: ThemeStudioState.requestAutoExtract("vibrant")
+                    }
+                    HoverLift {}
+                }
+
+                Rectangle {
+                    width: 50
+                    height: 22
+                    radius: 11
+                    color: Theme.plum
+                    border.width: 1
+                    border.color: Theme.pillBorder
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Deep"
+                        font.family: Theme.fontText
+                        font.pixelSize: 9
+                        font.bold: true
+                        color: Theme.ink
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: ThemeStudioState.requestAutoExtract("deep")
+                    }
+                    HoverLift {}
+                }
             }
         }
 
@@ -115,12 +228,12 @@ Rectangle {
             color: Theme.pillBorder
         }
 
-        // ─── 3. THE COLOR ROLE PILLS LIST ───────────────────────────────────────
-        // Each button is a 2-segment pill:
-        // [ (swatch: current color) | (Role Name: "Background", "Primary", etc.) ]
+        // ─── 4. THE COLOR ROLE PILLS LIST ───────────────────────────────────────
+        // Buttons are 2-segment pills named strictly by the ACTUAL UI OBJECTS:
+        // [ (swatch: current color + icon) | (Object Name: "Pill Icon Segment", etc.) ]
         ColumnLayout {
             Layout.fillWidth: true
-            spacing: 5
+            spacing: 4
 
             Repeater {
                 model: ThemeStudioState.slots
@@ -148,7 +261,7 @@ Rectangle {
                         SequentialAnimation on opacity {
                             running: rolePill.isSelected
                             loops: Animation.Infinite
-                            NumberAnimation { to: 0.55; duration: 650; easing.type: Easing.InOutQuad }
+                            NumberAnimation { to: 0.50; duration: 650; easing.type: Easing.InOutQuad }
                             NumberAnimation { to: 1.0; duration: 650; easing.type: Easing.InOutQuad }
                         }
                     }
@@ -156,7 +269,7 @@ Rectangle {
                     // ── Left Segment: Live Swatch of the currently picked color ──
                     Rectangle {
                         id: swatchSeg
-                        width: parent.height
+                        width: parent.height + 4
                         height: parent.height
                         anchors.left: parent.left
                         anchors.verticalCenter: parent.verticalCenter
@@ -168,20 +281,21 @@ Rectangle {
 
                         // Inner border to separate from dark or light backgrounds
                         border.width: 1
-                        border.color: Qt.rgba(1, 1, 1, 0.25)
+                        border.color: Qt.rgba(1, 1, 1, 0.28)
 
-                        // Center indicator dot
-                        Rectangle {
+                        // Object icon inside the swatch
+                        Text {
                             anchors.centerIn: parent
-                            width: 6
-                            height: 6
-                            radius: 3
+                            text: rolePill.modelData.icon || "circle"
+                            font.family: Theme.fontIcons
+                            font.pixelSize: 13
                             color: Theme.ink
-                            opacity: rolePill.isSelected ? 0.9 : 0.4
+                            style: Text.Outline
+                            styleColor: Qt.rgba(0, 0, 0, 0.6)
                         }
                     }
 
-                    // ── Right Segment: Respectable Color Role Name ─────────────
+                    // ── Right Segment: Respectable Actual Object Name ─────────────
                     Rectangle {
                         id: labelSeg
                         anchors.left: swatchSeg.right
@@ -200,19 +314,20 @@ Rectangle {
 
                         RowLayout {
                             anchors.fill: parent
-                            anchors.leftMargin: 10
-                            anchors.rightMargin: 10
-                            spacing: 6
+                            anchors.leftMargin: 8
+                            anchors.rightMargin: 8
+                            spacing: 5
 
+                            // The respectable color name (actual object it controls)
                             Text {
                                 text: rolePill.modelData.name
                                 font.family: Theme.fontText
-                                font.pixelSize: 11
+                                font.pixelSize: 10
                                 font.bold: rolePill.isSelected
                                 color: rolePill.isSelected ? Theme.attention : Theme.qsText
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
                             }
-
-                            Item { Layout.fillWidth: true }
 
                             // Active indicator badge
                             Rectangle {
@@ -237,7 +352,7 @@ Rectangle {
                             Text {
                                 text: rolePill.currentColor.toString().toUpperCase()
                                 font.family: Theme.fontText
-                                font.pixelSize: 10
+                                font.pixelSize: 9
                                 color: Theme.qsTextMuted
                             }
                         }
@@ -254,14 +369,14 @@ Rectangle {
             }
         }
 
-        // ─── 4. HUE & BRIGHTNESS SPECTRUM STRIP ──────────────────────────────────
+        // ─── 5. HUE & BRIGHTNESS SPECTRUM STRIP ──────────────────────────────────
         // Quick color strip where you can also slide across hues to fine-tune
         ColumnLayout {
             Layout.fillWidth: true
-            spacing: 4
+            spacing: 3
 
             Text {
-                text: "Color Spectrum Fine-Tune:"
+                text: "Spectrum Fine-Tune:"
                 font.family: Theme.fontText
                 font.pixelSize: 9
                 color: Theme.qsTextMuted
@@ -270,8 +385,8 @@ Rectangle {
             Rectangle {
                 id: spectrumBar
                 Layout.fillWidth: true
-                height: 18
-                radius: 9
+                height: 16
+                radius: 8
                 border.width: 1
                 border.color: Theme.pillBorder
                 clip: true
@@ -304,8 +419,8 @@ Rectangle {
             // Monochrome / lightness strip (black to white)
             Rectangle {
                 Layout.fillWidth: true
-                height: 14
-                radius: 7
+                height: 12
+                radius: 6
                 border.width: 1
                 border.color: Theme.pillBorder
                 clip: true
@@ -337,7 +452,7 @@ Rectangle {
             color: Theme.pillBorder
         }
 
-        // ─── 5. BOTTOM ACTION BUTTONS: SAVE & APPLY / CANCEL ────────────────────
+        // ─── 6. BOTTOM ACTION BUTTONS: SAVE & APPLY / CANCEL ────────────────────
         RowLayout {
             Layout.fillWidth: true
             spacing: 8
@@ -345,7 +460,7 @@ Rectangle {
             // Cancel Button
             Rectangle {
                 Layout.preferredWidth: 80
-                height: 34
+                height: 32
                 radius: height / 2
                 color: Theme.qsBgAlt
                 border.width: 1
@@ -357,13 +472,13 @@ Rectangle {
                     Text {
                         text: "close"
                         font.family: Theme.fontIcons
-                        font.pixelSize: 14
+                        font.pixelSize: 13
                         color: Theme.qsTextMuted
                     }
                     Text {
                         text: "Cancel"
                         font.family: Theme.fontText
-                        font.pixelSize: 11
+                        font.pixelSize: 10
                         font.bold: true
                         color: Theme.qsTextMuted
                     }
@@ -381,7 +496,7 @@ Rectangle {
             // Save and Apply Changes Button
             Rectangle {
                 Layout.fillWidth: true
-                height: 34
+                height: 32
                 radius: height / 2
                 color: Theme.attention
                 border.width: 1
@@ -393,13 +508,13 @@ Rectangle {
                     Text {
                         text: "check_circle"
                         font.family: Theme.fontIcons
-                        font.pixelSize: 16
+                        font.pixelSize: 15
                         color: Theme.ink
                     }
                     Text {
                         text: "Save & Apply Changes"
                         font.family: Theme.fontText
-                        font.pixelSize: 11
+                        font.pixelSize: 10
                         font.bold: true
                         color: Theme.ink
                     }

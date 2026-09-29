@@ -104,6 +104,110 @@ PanelWindow {
         ThemeStudioState.setSlotColor(ThemeStudioState.activeSlot, sampledHex)
     }
 
+    // Helper color math for automated extraction
+    function rgbToHsv(r, g, b) {
+        r /= 255; g /= 255; b /= 255;
+        let max = Math.max(r, g, b), min = Math.min(r, g, b);
+        let h = 0, s = 0, v = max;
+        let d = max - min;
+        s = max === 0 ? 0 : d / max;
+        if (max === min) {
+            h = 0;
+        } else {
+            switch (max) {
+                case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                case g: h = (b - r) / d + 2; break;
+                case b: h = (r - g) / d + 4; break;
+            }
+            h /= 6;
+        }
+        return { h: h, s: s, v: v };
+    }
+
+    function hsvToHex(h, s, v) {
+        let normH = ((h % 1.0) + 1.0) % 1.0;
+        let normS = Math.max(0, Math.min(1.0, s));
+        let normV = Math.max(0, Math.min(1.0, v));
+        let c = Qt.hsva(normH, normS, normV, 1.0);
+        return c.toString().toUpperCase();
+    }
+
+    // Automated color extraction with algorithmic tuning mapped to actual UI objects
+    function autoExtractPalette(mode) {
+        mode = mode || "balanced";
+        let samples = [];
+        if (sampleCanvas.ctx && bgWallpaper.status === Image.Ready) {
+            let cw = sampleCanvas.width;
+            let ch = sampleCanvas.height;
+            for (let gy = 1; gy <= 6; gy++) {
+                for (let gx = 1; gx <= 6; gx++) {
+                    let px = Math.round((gx / 7) * cw);
+                    let py = Math.round((gy / 7) * ch);
+                    try {
+                        let d = sampleCanvas.ctx.getImageData(px, py, 1, 1).data;
+                        let hsv = rgbToHsv(d[0], d[1], d[2]);
+                        samples.push({ r: d[0], g: d[1], b: d[2], h: hsv.h, s: hsv.s, v: hsv.v });
+                    } catch (e) {}
+                }
+            }
+        }
+
+        if (samples.length === 0) {
+            samples = [
+                { r: 24, g: 15, b: 60, h: 0.70, s: 0.75, v: 0.24 },
+                { r: 242, g: 114, b: 137, h: 0.97, s: 0.53, v: 0.95 },
+                { r: 47, g: 30, b: 160, h: 0.69, s: 0.81, v: 0.63 },
+                { r: 30, g: 13, b: 140, h: 0.69, s: 0.91, v: 0.55 }
+            ];
+        }
+
+        let satSorted = samples.slice().sort((a, b) => b.s - a.s);
+        let valSorted = samples.slice().sort((a, b) => b.v - a.v);
+
+        let mostVibrant = satSorted[0];
+        let satOnly = samples.filter(s => s.s > 0.25);
+        let dominantHue = satOnly.length > 0 ? satOnly[0].h : mostVibrant.h;
+
+        let pal = {};
+        if (mode === "vibrant") {
+            pal["plum"]      = hsvToHex(dominantHue + 0.05, 0.82, 0.58); // Pill Icon Segment
+            pal["primary"]   = hsvToHex(dominantHue, 0.75, 0.28);        // Pill Body / Capsule
+            pal["violet"]    = hsvToHex(dominantHue, 0.68, 0.15);        // Menu Card Background
+            pal["attention"] = hsvToHex(mostVibrant.h, 0.92, 0.98);      // Active Workspace & Accent
+            pal["indigo"]    = hsvToHex(dominantHue + 0.10, 0.75, 0.45); // Occupied Workspace
+            pal["bg"]        = hsvToHex(dominantHue, 0.60, 0.10);        // Empty Workspace
+            pal["ink"]       = "#FFFFFF";                                // Text & Icons
+            pal["lavender"]  = hsvToHex(dominantHue + 0.05, 0.35, 0.92); // Muted Text
+        } else if (mode === "deep") {
+            pal["plum"]      = hsvToHex(dominantHue + 0.08, 0.88, 0.42); // Pill Icon Segment
+            pal["primary"]   = hsvToHex(dominantHue, 0.70, 0.18);        // Pill Body / Capsule
+            pal["violet"]    = hsvToHex(dominantHue, 0.80, 0.09);        // Menu Card Background
+            pal["attention"] = hsvToHex(mostVibrant.h, 0.95, 0.95);      // Active Workspace & Accent
+            pal["indigo"]    = hsvToHex(dominantHue + 0.05, 0.70, 0.35); // Occupied Workspace
+            pal["bg"]        = hsvToHex(dominantHue, 0.70, 0.06);        // Empty Workspace
+            pal["ink"]       = "#F0F0FF";                                // Text & Icons
+            pal["lavender"]  = hsvToHex(dominantHue, 0.30, 0.80);        // Muted Text
+        } else { // "balanced"
+            pal["plum"]      = hsvToHex(dominantHue + 0.04, 0.75, 0.55); // Pill Icon Segment
+            pal["primary"]   = hsvToHex(dominantHue, 0.70, 0.24);        // Pill Body / Capsule
+            pal["violet"]    = hsvToHex(dominantHue, 0.65, 0.13);        // Menu Card Background
+            pal["attention"] = hsvToHex(mostVibrant.h, 0.85, 0.94);      // Active Workspace & Accent
+            pal["indigo"]    = hsvToHex(dominantHue + 0.08, 0.70, 0.48); // Occupied Workspace
+            pal["bg"]        = hsvToHex(dominantHue, 0.55, 0.10);        // Empty Workspace
+            pal["ink"]       = "#F5F5FA";                                // Text & Icons
+            pal["lavender"]  = hsvToHex(dominantHue + 0.03, 0.30, 0.88); // Muted Text
+        }
+
+        ThemeStudioState.applyFullPalette(pal);
+    }
+
+    Connections {
+        target: ThemeStudioState
+        function onRequestAutoExtract(mode) {
+            root.autoExtractPalette(mode);
+        }
+    }
+
     // ─── 2. SCREEN-WIDE SAMPLING MOUSEAREA ───────────────────────────────────────
     // Clicking or dragging anywhere on the wallpaper moves the crosshair and samples
     MouseArea {
