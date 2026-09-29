@@ -1,5 +1,5 @@
 // =============================================================================
-//  WORKSPACES.QML — workspace pips + overview button (Hyprland)
+//  WORKSPACES.QML — workspace pips + overview button (Hyprland Lua compatible)
 // =============================================================================
 //  Layout (the same two-segment capsule used all over this config):
 //     [ (grid icon) | 1 ▮ 2 ▮ 3 ▮ 4 ▮ 5 ]
@@ -15,14 +15,6 @@
 //     • occupied  → Theme.wsOccupied (indigo, has windows open)
 //     • empty     → Theme.wsEmpty    (dark, nothing open)
 //  Clicking a pip tells Hyprland to switch to that workspace.
-//
-//  REPEATER / index (a QML superpower, used a lot in this config)
-//  -------------------------------------------------------------
-//  `Repeater { model: 5 }` creates the child element 5 times, once per model
-//  entry. Inside each copy, `index` is the copy number (0‑based for the data,
-//  so workspace number = index + 1). Whatever element sits inside the Repeater
-//  gets instantiated repeatedly with the `index` value of that copy.
-//  #CHANGE-ME: set `model` to your number of workspaces.
 // =============================================================================
 import Quickshell
 import Quickshell.Hyprland
@@ -37,9 +29,20 @@ Rectangle {
     radius: height / 2
     color: "transparent"
 
+    // Helper: switch to workspace using Hyprland Lua syntax + standard fallbacks
+    function switchToWorkspace(ws) {
+        let wsStr = ws.toString()
+        // 1. Hyprland Lua dispatcher syntax (v0.55+):
+        Hyprland.dispatch("hl.dsp.focus({ workspace = '" + wsStr + "' })")
+        // 2. Standard single-string dispatcher format ("workspace <id>"):
+        Hyprland.dispatch("workspace " + wsStr)
+        // 3. Direct hyprctl CLI IPC to guarantee execution:
+        Quickshell.execDetached(["hyprctl", "dispatch", "workspace", wsStr])
+        Quickshell.execDetached(["hyprctl", "dispatch", "hl.dsp.focus({ workspace = '" + wsStr + "' })"])
+    }
+
     // --- LEFT ZONE: overview trigger icon (the grid_view button) -----------------
-    // Opens the Hyprland "expo" overview (hyprexpo plugin). Click = dispatch an
-    // IPC command to the running Hyprland instance through `Hyprland.dispatch`.
+    // Opens the Hyprland "expo" overview (hyprexpo plugin).
     Rectangle {
         id: iconSeg
         width: iconTxt.width + 14
@@ -66,15 +69,17 @@ Rectangle {
         MouseArea {
             anchors.fill: parent
             cursorShape: Qt.PointingHandCursor
-            onClicked: Hyprland.dispatch('hl.plugin.hyprexpo.expo')
+            onClicked: {
+                Hyprland.dispatch('hl.plugin.hyprexpo.expo')
+                Hyprland.dispatch('hyprexpo:expo, toggle')
+                Quickshell.execDetached(["hyprctl", "dispatch", "hyprexpo:expo", "toggle"])
+            }
         }
     }
 
     // --- RIGHT ZONE: the workspace pips (one capsule per workspace) ---------------
     Rectangle {
         id: pipsSeg
-        // Width sized so all 5 pips fit: (5 × 38px pip) + (5 × 7px margin)
-        // + (4 × 4px spacing) ≈ 246. #CHANGE-ME: adjust if you change `model`.
         implicitWidth: 246
         height: parent.height
         anchors.left: iconSeg.right
@@ -86,11 +91,22 @@ Rectangle {
         topRightRadius: height / 2
         bottomRightRadius: height / 2
 
+        // Mouse wheel over workspace row to scroll next/prev workspace
+        MouseArea {
+            anchors.fill: parent
+            z: 0
+            onWheel: wheel => {
+                let target = wheel.angleDelta.y > 0 ? "e-1" : "e+1"
+                root.switchToWorkspace(target)
+            }
+        }
+
         RowLayout {
             id: contentRow
             anchors.left: parent.left  // start at the left edge of the segment
             anchors.verticalCenter: parent.verticalCenter
             spacing: 4                // gap between neighboring pips
+            z: 1
 
             // One pip per workspace: model 5 → workspaces 1–5.
             Repeater {
@@ -100,30 +116,23 @@ Rectangle {
                 Rectangle {
                     id: wsPill
 
-                    // The workspace this copy represents (index is 0-based,
-                    // workspaces are 1-based).
                     property int wsId: index + 1
 
-                    // Live state, re-evaluated by the engine whenever Hyprland
-                    // reports a change (focus switch, window open/close).
+                    // Live state (checks id and name compatibility)
                     property bool isFocused: Hyprland.focusedWorkspace
-                                              && Hyprland.focusedWorkspace.id === wsId
-                    property bool exists: Hyprland.workspaces.values.some(w => w.id === wsPill.wsId)
+                                              && (Hyprland.focusedWorkspace.id === wsId
+                                                  || Hyprland.focusedWorkspace.name === wsId.toString())
+                    property bool exists: Hyprland.workspaces
+                                          && Hyprland.workspaces.values.some(w => w.id === wsPill.wsId || w.name === wsPill.wsId.toString())
 
                     Layout.leftMargin: 7
-                    // Honest width: number segment + state segment must MATCH
-                    // the child widths below (else pips overlap or leave gaps).
                     implicitWidth: innerIconSeg.width + innerTextSeg.width
                     implicitHeight: 18
                     radius: height / 2
                     Layout.alignment: Qt.AlignVCenter
-                    color: Theme.border   // transparent root; children draw
+                    color: Theme.border
 
                     // ── Left half: the workspace NUMBER on a plum square ──────
-                    // ## FIXED (was a bug): the old code was
-                    // `visible: root.hasIcon` — but this component's root has
-                    // no `hasIcon` property, so it was always FALSE and the
-                    // number NEVER displayed. Now the segment always shows.
                     Rectangle {
                         id: innerIconSeg
                         width: 20
@@ -132,15 +141,15 @@ Rectangle {
                         anchors.verticalCenter: parent.verticalCenter
                         color: Theme.plum
 
-                        topLeftRadius: height / 2   // left cap of the pip
+                        topLeftRadius: height / 2
                         bottomLeftRadius: height / 2
-                        topRightRadius: 0           // flat at the seam
+                        topRightRadius: 0
                         bottomRightRadius: 0
 
                         Text {
                             id: pipNumber
                             anchors.centerIn: parent
-                            text: index + 1         // 1-based workspace number
+                            text: index + 1
                             color: Theme.ink
                             font.family: Theme.fontText
                             font.pixelSize: 12
@@ -149,7 +158,6 @@ Rectangle {
                     }
 
                     // ── Right half: the STATE-colored bar ──────────────────────
-                    // The color encodes the workspace state (see file header).
                     Rectangle {
                         id: innerTextSeg
                         width: 18
@@ -161,7 +169,7 @@ Rectangle {
 
                         topLeftRadius: 0
                         bottomLeftRadius: 0
-                        topRightRadius: height / 2   // right cap of the pip
+                        topRightRadius: height / 2
                         bottomRightRadius: height / 2
                     }
 
@@ -169,7 +177,7 @@ Rectangle {
                     MouseArea {
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: Hyprland.dispatch("workspace", wsPill.wsId.toString())
+                        onClicked: root.switchToWorkspace(wsPill.wsId)
                     }
                 }
             }
