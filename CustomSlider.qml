@@ -13,11 +13,13 @@
 //     adjacent segments, then violently snaps back into the maximum (or
 //     minimum) slot on release with an elastic bounce.
 //
-//  2. Slow & Careful Tuning (Safe-Lock Dial Pip):
-//     When fine-tuning slowly, a circular pip appears adjacent to the slider.
-//     Inside is a rotating safe combination lock dial with engraved tick marks,
-//     a 12 o'clock index notch that pulses on each mechanical tick, and a
-//     crisp numeric percentage display in the center hub.
+//  2. Slow & Careful Tuning Easter Egg (Safe-Lock Dial Pip):
+//     Hidden by default during normal sliding. Only appears as an Easter egg
+//     when the user deliberately moves slowly and carefully (fine-tuning).
+//     Detects slow, delicate movement sustained over ~180ms and reveals a
+//     circular safe-combination lock dial with 24 engraved tick marks,
+//     mechanical ticking pulse on the 12 o'clock notch, and a live numeric
+//     percentage readout. If the user speeds up, it tucks away immediately.
 //
 //  3. Locked Vertical Scroll & Zero Clipping:
 //     MouseArea has `preventStealing: true` so dragging the slider never
@@ -51,8 +53,9 @@ Rectangle {
     property real lastMouseTime: 0
     property real dragSpeed: 0
 
-    // Fine-tuning state & safe-lock dial
-    property bool fineTuningActive: false
+    // Fine-tuning Easter egg state & safe-lock dial
+    // Only unlocks when the user deliberately moves slowly and carefully!
+    property bool fineTuningUnlocked: false
     readonly property real dialRotation: (root.maxValue > 0 ? (root.effectiveValue / root.maxValue) : 0) * 720
     readonly property int currentTick: Math.floor(dialRotation / 15)
 
@@ -62,22 +65,34 @@ Rectangle {
     color: "transparent"
 
     // Elevate z-index while active so the entire slider and floating pip render on top of neighbor widgets
-    z: (isDragging || fineTuningActive) ? 1000 : 1
+    z: (isDragging && fineTuningUnlocked) ? 1000 : (isDragging ? 50 : 1)
 
     // Micro mechanical pulse on each dial tick
     onCurrentTickChanged: {
-        if (root.isDragging || root.fineTuningActive) {
+        if (root.isDragging && root.fineTuningUnlocked) {
             tickPulse.restart()
         }
     }
 
-    // Timer to keep the safe dial visible for a moment after gentle scrolling / release
+    // Timer that unlocks the Easter egg after sustained slow, careful movement
     Timer {
-        id: hideDialTimer
-        interval: 380
+        id: slowTuneTimer
+        interval: 180
         repeat: false
         onTriggered: {
-            root.fineTuningActive = false
+            if (root.isDragging && root.dragSpeed < 85) {
+                root.fineTuningUnlocked = true
+            }
+        }
+    }
+
+    // Timer to keep the safe dial visible for a brief moment after releasing slow tune
+    Timer {
+        id: hideDialTimer
+        interval: 280
+        repeat: false
+        onTriggered: {
+            root.fineTuningUnlocked = false
             root.isFastYank = false
         }
     }
@@ -200,15 +215,25 @@ Rectangle {
                     // adjustedX accounts for anchors.leftMargin: -14
                     let adjustedX = mouse.x - 14
                     let dx = adjustedX - root.lastMouseX
-                    root.dragSpeed = Math.abs(dx) / (dt / 1000)
+                    let instantSpeed = Math.abs(dx) / (dt / 1000)
+                    // Smooth EMA speed calculation
+                    root.dragSpeed = (root.dragSpeed * 0.5) + (instantSpeed * 0.5)
                     root.lastMouseX = adjustedX
                     root.lastMouseTime = now
 
-                    // Detect fast yank velocity
-                    if (root.dragSpeed > 550) {
-                        root.isFastYank = true
-                    } else if (root.dragSpeed < 200) {
-                        root.isFastYank = false
+                    // Detect Easter egg slow fine-tuning vs normal/fast drag
+                    if (root.dragSpeed >= 110 || Math.abs(root.rubberOffset) > 4) {
+                        // Moving fast or yanking: hide dial immediately
+                        slowTuneTimer.stop()
+                        root.fineTuningUnlocked = false
+                        if (root.dragSpeed > 550) {
+                            root.isFastYank = true
+                        }
+                    } else if (root.dragSpeed > 0.5 && root.dragSpeed < 75) {
+                        // Moving slowly and carefully: candidate for fine-tune Easter egg!
+                        if (!root.fineTuningUnlocked && !slowTuneTimer.running) {
+                            slowTuneTimer.restart()
+                        }
                     }
 
                     // Rubber-band calculation beyond rail limits
@@ -232,9 +257,10 @@ Rectangle {
 
                 onPressed: mouse => {
                     snapBackAnim.stop()
+                    slowTuneTimer.stop()
                     hideDialTimer.stop()
                     root.isDragging = true
-                    root.fineTuningActive = true
+                    root.fineTuningUnlocked = false
                     let adjustedX = mouse.x - 14
                     root.lastMouseX = adjustedX
                     root.lastMouseTime = Date.now()
@@ -251,26 +277,30 @@ Rectangle {
 
                 onReleased: {
                     root.isDragging = false
+                    slowTuneTimer.stop()
                     if (root.rubberOffset !== 0) {
                         snapBackAnim.restart()
                     }
-                    hideDialTimer.restart()
+                    if (root.fineTuningUnlocked) {
+                        hideDialTimer.restart()
+                    } else {
+                        root.fineTuningUnlocked = false
+                    }
                 }
 
                 onCanceled: {
                     root.isDragging = false
+                    slowTuneTimer.stop()
                     if (root.rubberOffset !== 0) {
                         snapBackAnim.restart()
                     }
-                    hideDialTimer.restart()
+                    root.fineTuningUnlocked = false
                 }
 
                 onWheel: wheel => {
                     let step = root.maxValue * 0.05
                     let delta = wheel.angleDelta.y > 0 ? step : -step
                     let newVal = Math.max(0, Math.min(root.maxValue, root.value + delta))
-                    root.fineTuningActive = true
-                    hideDialTimer.restart()
                     root.valueChangedByUser(newVal)
                 }
             }
@@ -319,9 +349,10 @@ Rectangle {
     }
 
     // =========================================================================
-    //  SAFE-LOCK DIAL CIRCULAR PIP (Careful Fine-Tuning Mode)
+    //  SAFE-LOCK DIAL CIRCULAR PIP (Careful Fine-Tuning Easter Egg)
     // =========================================================================
     //  Floats adjacent to the slider handle, tracking its X position smoothly.
+    //  Only revealed when the user is moving slowly and fine-tuning carefully!
     Item {
         id: safeDialPip
         width: 52
@@ -336,14 +367,14 @@ Rectangle {
             NumberAnimation { duration: 60; easing.type: Easing.OutCubic }
         }
 
-        // Active when tuning carefully; tucked away during violent yank outside limit
-        readonly property bool shouldShow: (root.isDragging || root.fineTuningActive) && (!root.isFastYank || Math.abs(root.rubberOffset) < 6)
+        // EASTER EGG: Only show when fine-tuning deliberately slow & careful
+        readonly property bool shouldShow: root.fineTuningUnlocked && (!root.isFastYank && Math.abs(root.rubberOffset) < 5)
 
-        scale: shouldShow ? 1.0 : 0.4
+        scale: shouldShow ? 1.0 : 0.35
         opacity: shouldShow ? 1.0 : 0.0
 
         Behavior on scale {
-            NumberAnimation { duration: 240; easing.type: Easing.OutBack }
+            NumberAnimation { duration: 250; easing.type: Easing.OutBack }
         }
         Behavior on opacity {
             NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
