@@ -1080,7 +1080,7 @@ Pill {
                         height: root.hubH
                         anchors.horizontalCenter: parent.horizontalCenter
                         anchors.top: parent.top
-                        clip: true
+                        clip: false
                         visible: opacity > 0.001
                         opacity: root.animStyle === "island"
                             ? Math.min(1.0, Math.max(0.0, (root.islandProgress - 0.20) / 0.60))
@@ -1458,7 +1458,7 @@ Pill {
                                     id: settingsFlick
                                     Layout.fillWidth: true
                                     Layout.fillHeight: true
-                                    clip: true
+                                    clip: false
                                     boundsBehavior: Flickable.StopAtBounds
                                     interactive: contentHeight > height
                                     flickableDirection: Flickable.VerticalFlick
