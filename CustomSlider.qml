@@ -8,18 +8,20 @@
 //  MODES & ANIMATIONS:
 //  -------------------
 //  1. Robbery / Elastic Yank:
-//     When yanking or dragging past the limit, the knob stretches outside
-//     its boundary with elastic tension, overlaying on top of the pill and
-//     adjacent segments, then violently snaps back into the maximum (or
-//     minimum) slot on release with an elastic bounce.
+//     Normal sliding across the track is completely smooth. When forcefully
+//     yanking or dragging past the limit, the knob stretches outside its
+//     boundary with elastic tension, overlaying on top of the pill and adjacent
+//     segments, then snaps back into the maximum (or minimum) slot on release
+//     with a rubber bounce.
 //
 //  2. Slow & Careful Tuning Easter Egg (Safe-Lock Dial Pip):
-//     Hidden by default during normal sliding. Only appears as an Easter egg
+//     Hidden by default during normal dragging. Only appears as an Easter egg
 //     when the user deliberately moves slowly and carefully (fine-tuning).
-//     Detects slow, delicate movement sustained over ~180ms and reveals a
+//     Detects slow, delicate movement sustained over ~140ms and reveals a
 //     circular safe-combination lock dial with 24 engraved tick marks,
 //     mechanical ticking pulse on the 12 o'clock notch, and a live numeric
-//     percentage readout. If the user speeds up, it tucks away immediately.
+//     percentage readout. If the user speeds up, it tucks away immediately,
+//     and re-appears whenever they slow down again anywhere on the track.
 //
 //  3. Locked Vertical Scroll & Zero Clipping:
 //     MouseArea has `preventStealing: true` so dragging the slider never
@@ -48,7 +50,6 @@ Rectangle {
 
     // Elastic rubber yank physics ("robbery" mode)
     property real rubberOffset: 0.0
-    property bool isFastYank: false
     property real lastMouseX: 0
     property real lastMouseTime: 0
     property real dragSpeed: 0
@@ -77,10 +78,10 @@ Rectangle {
     // Timer that unlocks the Easter egg after sustained slow, careful movement
     Timer {
         id: slowTuneTimer
-        interval: 180
+        interval: 140
         repeat: false
         onTriggered: {
-            if (root.isDragging && root.dragSpeed < 85) {
+            if (root.isDragging && root.dragSpeed < 180 && Math.abs(root.rubberOffset) < 2) {
                 root.fineTuningUnlocked = true
             }
         }
@@ -89,11 +90,10 @@ Rectangle {
     // Timer to keep the safe dial visible for a brief moment after releasing slow tune
     Timer {
         id: hideDialTimer
-        interval: 280
+        interval: 260
         repeat: false
         onTriggered: {
             root.fineTuningUnlocked = false
-            root.isFastYank = false
         }
     }
 
@@ -107,9 +107,6 @@ Rectangle {
         easing.type: Easing.OutElastic
         easing.amplitude: 2.0
         easing.period: 0.32
-        onFinished: {
-            root.isFastYank = false
-        }
     }
 
     // --- LEFT ZONE: icon segment --------------------------------------------------
@@ -197,13 +194,13 @@ Rectangle {
             }
 
             // --- Interaction MouseArea ---------------------------------------------
+            // Covers sliderBox with zero confusing offsets: mouse.x = 0 is start of rail,
+            // mouse.x = rail.width is end of rail.
             MouseArea {
                 id: mouseArea
                 anchors.fill: parent
                 anchors.topMargin: -8
                 anchors.bottomMargin: -8
-                anchors.leftMargin: -14
-                anchors.rightMargin: -14
                 cursorShape: Qt.PointingHandCursor
                 hoverEnabled: true
                 preventStealing: true
@@ -212,44 +209,45 @@ Rectangle {
                 function updateVal(mouse) {
                     let now = Date.now()
                     let dt = Math.max(1, now - root.lastMouseTime)
-                    // adjustedX accounts for anchors.leftMargin: -14
-                    let adjustedX = mouse.x - 14
-                    let dx = adjustedX - root.lastMouseX
+                    let dx = mouse.x - root.lastMouseX
                     let instantSpeed = Math.abs(dx) / (dt / 1000)
-                    // Smooth EMA speed calculation
-                    root.dragSpeed = (root.dragSpeed * 0.5) + (instantSpeed * 0.5)
-                    root.lastMouseX = adjustedX
+                    // Smooth moving average for velocity
+                    root.dragSpeed = (root.dragSpeed * 0.4) + (instantSpeed * 0.6)
+                    root.lastMouseX = mouse.x
                     root.lastMouseTime = now
 
-                    // Detect Easter egg slow fine-tuning vs normal/fast drag
-                    if (root.dragSpeed >= 110 || Math.abs(root.rubberOffset) > 4) {
-                        // Moving fast or yanking: hide dial immediately
+                    // --- Fine-tuning Easter egg detection ---
+                    // Normal drag is 200-600 px/s.
+                    // Fine-tuning is slow & careful (< 160 px/s).
+                    // Fast motion / swiping (> 300 px/s) hides the dial immediately.
+                    if (root.dragSpeed > 300 || Math.abs(root.rubberOffset) > 2) {
                         slowTuneTimer.stop()
                         root.fineTuningUnlocked = false
-                        if (root.dragSpeed > 550) {
-                            root.isFastYank = true
-                        }
-                    } else if (root.dragSpeed > 0.5 && root.dragSpeed < 75) {
-                        // Moving slowly and carefully: candidate for fine-tune Easter egg!
+                    } else if (root.dragSpeed < 160 && Math.abs(root.rubberOffset) < 2) {
+                        // Slow, careful tuning: start or maintain fine-tuning
                         if (!root.fineTuningUnlocked && !slowTuneTimer.running) {
                             slowTuneTimer.restart()
                         }
                     }
 
-                    // Rubber-band calculation beyond rail limits
-                    if (adjustedX > rail.width) {
-                        let over = adjustedX - rail.width
-                        root.rubberOffset = Math.min(32, Math.pow(over, 0.72) * 1.5)
+                    // --- Slider Value & Yank Mechanics ---
+                    // Deadband of 5px past limits so reaching 0% or 100% is solid
+                    // and doesn't prematurely trigger rubber stretch.
+                    if (mouse.x > rail.width + 5) {
+                        let over = mouse.x - (rail.width + 5)
+                        root.rubberOffset = Math.min(26, Math.pow(over, 0.70) * 1.3)
                         root.dragValue = root.maxValue
                         root.valueChangedByUser(root.maxValue)
-                    } else if (adjustedX < 0) {
-                        let under = -adjustedX
-                        root.rubberOffset = -Math.min(32, Math.pow(under, 0.72) * 1.5)
+                    } else if (mouse.x < -5) {
+                        let under = -5 - mouse.x
+                        root.rubberOffset = -Math.min(26, Math.pow(under, 0.70) * 1.3)
                         root.dragValue = 0
                         root.valueChangedByUser(0)
                     } else {
+                        // Inside normal slider range: zero rubber offset, completely clean
                         root.rubberOffset = 0
-                        let newVal = rail.width > 0 ? (adjustedX / rail.width) * root.maxValue : 0
+                        let clampedX = Math.max(0, Math.min(rail.width, mouse.x))
+                        let newVal = rail.width > 0 ? (clampedX / rail.width) * root.maxValue : 0
                         root.dragValue = newVal
                         root.valueChangedByUser(newVal)
                     }
@@ -261,11 +259,9 @@ Rectangle {
                     hideDialTimer.stop()
                     root.isDragging = true
                     root.fineTuningUnlocked = false
-                    let adjustedX = mouse.x - 14
-                    root.lastMouseX = adjustedX
+                    root.lastMouseX = mouse.x
                     root.lastMouseTime = Date.now()
                     root.dragSpeed = 0
-                    root.isFastYank = false
                     updateVal(mouse)
                 }
 
@@ -333,8 +329,8 @@ Rectangle {
         transform: Scale {
             origin.x: handle.width / 2
             origin.y: handle.height / 2
-            xScale: 1.0 + Math.min(0.40, Math.abs(root.rubberOffset) / 60)
-            yScale: 1.0 - Math.min(0.25, Math.abs(root.rubberOffset) / 120)
+            xScale: 1.0 + Math.min(0.35, Math.abs(root.rubberOffset) / 60)
+            yScale: 1.0 - Math.min(0.20, Math.abs(root.rubberOffset) / 120)
         }
 
         // Inner core dot for precision feel
@@ -368,16 +364,16 @@ Rectangle {
         }
 
         // EASTER EGG: Only show when fine-tuning deliberately slow & careful
-        readonly property bool shouldShow: root.fineTuningUnlocked && (!root.isFastYank && Math.abs(root.rubberOffset) < 5)
+        readonly property bool shouldShow: root.fineTuningUnlocked && Math.abs(root.rubberOffset) < 3
 
         scale: shouldShow ? 1.0 : 0.35
         opacity: shouldShow ? 1.0 : 0.0
 
         Behavior on scale {
-            NumberAnimation { duration: 250; easing.type: Easing.OutBack }
+            NumberAnimation { duration: 220; easing.type: Easing.OutBack }
         }
         Behavior on opacity {
-            NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+            NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
         }
 
         // --- Downward stem pointing to the handle -------------------------------
