@@ -49,3 +49,8 @@ CalendarGrid   1.0 CalendarGrid.qml # Month calendar (Hub calendar/weather tab)
 # --- Panels -------------------------------------------------------------------
 # QuickSettings is a whole PanelWindow (the dropdown), not just a widget.
 QuickSettings  1.0 QuickSettings.qml
+
+# --- Theme Studio Workstation -------------------------------------------------
+singleton ThemeStudioState 1.0 ThemeStudioState.qml
+ThemeStudio        1.0 ThemeStudio.qml
+ColorPickerWidget  1.0 ColorPickerWidget.qml

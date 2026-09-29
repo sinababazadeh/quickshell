@@ -34,6 +34,14 @@ ShellRoot {
         Wallpaper {}
     }
 
+    // ─── THEME STUDIO WORKSTATION ───────────────────────────────────────────────
+    // Interactive full-screen wallpaper color-picker studio (ThemeStudio.qml).
+    // Activated from the Hub's Theme tab to fine-tune colors directly on wallpaper.
+    Variants {
+        model: Quickshell.screens
+        ThemeStudio {}
+    }
+
     // ─── ONE BAR PER MONITOR ────────────────────────────────────────────────────
     // `Variants` is Quickshell's way of saying "run this block once per item in
     // `model`". Quickshell.screens is the list of connected displays, so this

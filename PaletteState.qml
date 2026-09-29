@@ -161,6 +161,27 @@ Item {
         root.save()
     }
 
+    // ─── Save complete palette dictionary for a wallpaper (Theme Studio) ─────────
+    function saveFullPalette(path, newPalette) {
+        if (!path) return
+        let entry = entryFor(path)
+        if (!entry) {
+            entry = {
+                path: path,
+                name: path.split("/").pop(),
+                palette: {}
+            }
+            root.registry.wallpapers.push(entry)
+        }
+        if (!entry.palette) entry.palette = {}
+        for (let key in newPalette) {
+            entry.palette[key] = newPalette[key]
+        }
+        root.revision++
+        if (path === WallpaperState.current) applyFor(path)
+        root.save()
+    }
+
     // ─── Reset wallpaper palette to current Theme defaults ─────────────────────
     function resetPalette(path) {
         let entry = entryFor(path)

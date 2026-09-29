@@ -1975,6 +1975,27 @@ Pill {
                                             HoverLift { }
                                         }
 
+                                        // Live Studio icon button — opens fullscreen workstation overlay
+                                        Text {
+                                            text: "colorize"
+                                            font.family: Theme.fontIcons
+                                            font.pixelSize: 18
+                                            color: Theme.attention
+                                            Layout.alignment: Qt.AlignVCenter
+
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: {
+                                                    let target = root.editingPath || WallpaperState.current || (root.wallpapers.length > 0 ? root.wallpapers[0] : "")
+                                                    root.collapse()
+                                                    ThemeStudioState.open(target)
+                                                }
+                                            }
+
+                                            HoverLift { }
+                                        }
+
                                         // Theme settings — opens the manage view for currently active wallpaper
                                         Text {
                                             text: "settings"
@@ -2381,6 +2402,49 @@ Pill {
                                                     font.pixelSize: 9
                                                     color: Theme.qsTextMuted
                                                 }
+                                            }
+
+                                            // Live Color Studio Button (opens fullscreen workstation with movable color picker)
+                                            Rectangle {
+                                                implicitHeight: 26
+                                                implicitWidth: studioContentRow.implicitWidth + 14
+                                                radius: 13
+                                                color: Theme.plum
+                                                border.width: 1
+                                                border.color: Theme.attention
+
+                                                RowLayout {
+                                                    id: studioContentRow
+                                                    anchors.centerIn: parent
+                                                    spacing: 4
+
+                                                    Text {
+                                                        text: "colorize"
+                                                        font.family: Theme.fontIcons
+                                                        font.pixelSize: 13
+                                                        color: Theme.ink
+                                                    }
+
+                                                    Text {
+                                                        text: "Live Studio"
+                                                        font.family: Theme.fontText
+                                                        font.pixelSize: 10
+                                                        font.bold: true
+                                                        color: Theme.ink
+                                                    }
+                                                }
+
+                                                MouseArea {
+                                                    anchors.fill: parent
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: {
+                                                        let targetPath = root.editingPath || WallpaperState.current
+                                                        root.collapse()
+                                                        ThemeStudioState.open(targetPath)
+                                                    }
+                                                }
+
+                                                HoverLift { }
                                             }
 
                                             // Reset palette button
