@@ -227,7 +227,7 @@ Rectangle {
                                     anchors.centerIn: parent
                                     text: "TUNING"
                                     font.family: Theme.fontText
-                                    font.pixelSize: 7.5
+                                    font.pixelSize: 8
                                     font.bold: true
                                     color: Theme.ink
                                 }
