@@ -1,26 +1,26 @@
 // =============================================================================
-//  CUSTOMSLIDER.QML — icon pill + draggable slider track
+//  CUSTOMSLIDER.QML — icon pill + draggable slider track with physics
 // =============================================================================
 //  Layout:
 //     [ (icon) | ───────●──────── ]
 //     plum       primary  track
 //
-//  HOW IT WORKS
-//  ------------
-//  The track is a thin rail. A MouseArea covers the whole track area and
-//  reports where the pointer is; we convert that X position to a 0.0–1.0
-//  value and emit it. The round "handle" is positioned at `value * width`,
-//  and the filled portion of the rail extends up to the handle — both are
-//  BINDINGS that follow `root.value` automatically.
+//  MODES & ANIMATIONS:
+//  -------------------
+//  1. Robbery / Elastic Yank:
+//     When yanking or dragging past the limit, the handle stretches outside
+//     its boundary with elastic tension, then violently snaps back into the
+//     maximum (or minimum) slot on release with an elastic bounce.
 //
-//  CONNECTING IT TO REAL THINGS
-//  ----------------------------
-//  This component never touches the system itself. QuickSettings.qml uses it
-//  like so:
-//      CustomSlider { value: sink.audio.volume
-//                     onValueChangedByUser: v => sink.audio.volume = v }
-//  `value` pulls the current system state in; `valueChangedByUser` pushes
-//  changes out. Clean two-way data flow.
+//  2. Slow & Careful Tuning (Safe-Lock Dial Pip):
+//     When fine-tuning slowly, a circular pip appears adjacent to the slider.
+//     Inside is a rotating safe combination lock dial with engraved tick marks,
+//     a 12 o'clock index notch that pulses on each mechanical tick, and a
+//     crisp numeric percentage display in the center hub.
+//
+//  3. Locked Vertical Scroll:
+//     MouseArea has `preventStealing: true` so dragging the slider never
+//     triggers parent Flickables (no accidental vertical screen movement).
 // =============================================================================
 import QtQuick
 import QtQuick.Layouts
@@ -34,18 +34,66 @@ Rectangle {
     property real maxValue: 1.0         // upper end of the range (1.5 = 150% boost)
     property string displayText: ""     // optional text drawn at the right end of the track
 
-    // --- Signal: fired when the USER drags, with the new 0.0–1.0 value -----------
+    // --- Signal: fired when the USER drags, with the new 0.0–maxValue value ------
     signal valueChangedByUser(real newValue)
 
-    // Internal drag state to prevent destroying the parent's QML property binding
+    // Internal drag state
     property bool isDragging: false
     property real dragValue: 0.0
     readonly property real effectiveValue: isDragging ? dragValue : root.value
+
+    // Elastic rubber yank physics ("robbery" mode)
+    property real rubberOffset: 0.0
+    property bool isFastYank: false
+    property real lastMouseX: 0
+    property real lastMouseTime: 0
+    property real dragSpeed: 0
+
+    // Fine-tuning state & safe-lock dial
+    property bool fineTuningActive: false
+    readonly property real dialRotation: (root.maxValue > 0 ? (root.effectiveValue / root.maxValue) : 0) * 720
+    readonly property int currentTick: Math.floor(dialRotation / 15)
 
     implicitHeight: 38
     Layout.fillWidth: true
     radius: 0
     color: "transparent"
+
+    // Elevate z-index while active so the floating safe-dial pip renders above neighbor tiles
+    z: (isDragging || fineTuningActive) ? 100 : 1
+
+    // Micro mechanical pulse on each dial tick
+    onCurrentTickChanged: {
+        if (root.isDragging || root.fineTuningActive) {
+            tickPulse.restart()
+        }
+    }
+
+    // Timer to keep the safe dial visible for a moment after gentle scrolling / release
+    Timer {
+        id: hideDialTimer
+        interval: 380
+        repeat: false
+        onTriggered: {
+            root.fineTuningActive = false
+            root.isFastYank = false
+        }
+    }
+
+    // Elastic snap-back animation when letting go of a yank
+    NumberAnimation {
+        id: snapBackAnim
+        target: root
+        property: "rubberOffset"
+        to: 0
+        duration: 420
+        easing.type: Easing.OutElastic
+        easing.amplitude: 2.0
+        easing.period: 0.32
+        onFinished: {
+            root.isFastYank = false
+        }
+    }
 
     // --- LEFT ZONE: icon segment --------------------------------------------------
     Rectangle {
@@ -55,7 +103,6 @@ Rectangle {
         anchors.left: parent.left
         anchors.verticalCenter: parent.verticalCenter
         color: Theme.plum
-        // Left cap, flat right edge (meets the track segment)
         topLeftRadius: height / 2
         bottomLeftRadius: height / 2
         topRightRadius: 0
@@ -80,20 +127,19 @@ Rectangle {
         height: parent.height
         anchors.verticalCenter: parent.verticalCenter
         color: Theme.primary
-        // Flat left edge, right cap
         topLeftRadius: 0
         bottomLeftRadius: 0
         topRightRadius: height / 2
         bottomRightRadius: height / 2
 
-        // Area the actual controls live in (inset from both edges).
+        // Area the actual controls live in (inset from both edges)
         Item {
             id: sliderBox
             anchors.fill: parent
             anchors.leftMargin: 14
             anchors.rightMargin: 14
 
-            // --- The rail: a thin rounded strip -------------------------------------
+            // --- The rail: thin rounded strip ---------------------------------------
             Rectangle {
                 id: rail
                 height: 6
@@ -104,10 +150,10 @@ Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
             }
 
-            // --- Filled portion: from the left up to the handle -----------------------
-            // BINDING: follows `handle.x` live, so it re-draws on every drag.
+            // --- Filled portion: stretches from left up to the handle ---------------
             Rectangle {
-                width: Math.max(0, Math.min(rail.width, handle.x + handle.width / 2))
+                id: fillBar
+                width: Math.max(0, Math.min(rail.width + Math.max(0, root.rubberOffset), handle.x + handle.width / 2))
                 height: 6
                 radius: 3
                 color: Theme.attention
@@ -115,21 +161,43 @@ Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
             }
 
-            // --- The draggable handle (a ball) -----------------------------------------
-            // x = (value/maxValue) × (rail width − ball width) parks the ball so
-            // its CENTER reaches value% of the way along the rail — without ever
-            // falling off. maxValue lets a slider go past 1.0 (e.g. volume boost).
+            // --- The draggable handle with rubber deformation & yank physics -------
             Rectangle {
                 id: handle
-                width: 16
-                height: 16
+                width: mouseArea.containsMouse || root.isDragging ? 18 : 16
+                height: width
                 radius: height / 2
                 color: Theme.attention
                 anchors.verticalCenter: parent.verticalCenter
-                x: ((root.maxValue > 0 ? root.effectiveValue / root.maxValue : 0)) * Math.max(0, rail.width - width)
+
+                // Base slot position + elastic rubber stretch offset
+                readonly property real baseSlotX: (root.maxValue > 0 ? (root.effectiveValue / root.maxValue) : 0) * Math.max(0, rail.width - width)
+                x: baseSlotX + root.rubberOffset
+
+                Behavior on width {
+                    NumberAnimation { duration: 120 }
+                }
+
+                // Rubber squash & stretch transform when pulled taut
+                transform: Scale {
+                    origin.x: handle.width / 2
+                    origin.y: handle.height / 2
+                    xScale: 1.0 + Math.min(0.40, Math.abs(root.rubberOffset) / 60)
+                    yScale: 1.0 - Math.min(0.25, Math.abs(root.rubberOffset) / 120)
+                }
+
+                // Inner core dot for precision feel
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: 6
+                    height: 6
+                    radius: 3
+                    color: Theme.qsBg
+                    opacity: root.isDragging ? 0.9 : 0.4
+                }
             }
 
-            // --- Optional value text (right-aligned in the track) -----------------------
+            // --- Optional value text (right-aligned in the track) -------------------
             Text {
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
@@ -141,35 +209,253 @@ Rectangle {
                 color: Theme.ink
             }
 
-            // --- Interaction: press anywhere, drag anywhere ------------------------------
+            // --- Interaction MouseArea ---------------------------------------------
             MouseArea {
+                id: mouseArea
                 anchors.fill: parent
                 cursorShape: Qt.PointingHandCursor
+                hoverEnabled: true
 
-                // Convert a mouse X to a value in the 0.0–maxValue range.
-                //   clampedX = mouse.x clamped between 0 and rail.width
-                //   newVal   = (clampedX / rail.width) × maxValue
+                // CRITICAL: prevents parent Flickables from stealing drag motion
+                preventStealing: true
+
                 function updateVal(mouse) {
-                    let clampedX = Math.max(0, Math.min(rail.width, mouse.x))
-                    let newVal = rail.width > 0 ? (clampedX / rail.width) * root.maxValue : 0
-                    root.dragValue = newVal
-                    root.valueChangedByUser(newVal)   // notify listeners without breaking property binding
+                    let now = Date.now()
+                    let dt = Math.max(1, now - root.lastMouseTime)
+                    let dx = mouse.x - root.lastMouseX
+                    root.dragSpeed = Math.abs(dx) / (dt / 1000)
+                    root.lastMouseX = mouse.x
+                    root.lastMouseTime = now
+
+                    // Detect fast yank velocity
+                    if (root.dragSpeed > 550) {
+                        root.isFastYank = true
+                    } else if (root.dragSpeed < 200) {
+                        root.isFastYank = false
+                    }
+
+                    // Rubber-band calculation beyond rail limits
+                    if (mouse.x > rail.width) {
+                        let over = mouse.x - rail.width
+                        root.rubberOffset = Math.min(36, Math.pow(over, 0.72) * 1.6)
+                        root.dragValue = root.maxValue
+                        root.valueChangedByUser(root.maxValue)
+                    } else if (mouse.x < 0) {
+                        let under = -mouse.x
+                        root.rubberOffset = -Math.min(36, Math.pow(under, 0.72) * 1.6)
+                        root.dragValue = 0
+                        root.valueChangedByUser(0)
+                    } else {
+                        // Inside normal bounds
+                        root.rubberOffset = 0
+                        let newVal = rail.width > 0 ? (mouse.x / rail.width) * root.maxValue : 0
+                        root.dragValue = newVal
+                        root.valueChangedByUser(newVal)
+                    }
                 }
 
                 onPressed: mouse => {
+                    snapBackAnim.stop()
+                    hideDialTimer.stop()
                     root.isDragging = true
+                    root.fineTuningActive = true
+                    root.lastMouseX = mouse.x
+                    root.lastMouseTime = Date.now()
+                    root.dragSpeed = 0
+                    root.isFastYank = false
                     updateVal(mouse)
                 }
+
                 onPositionChanged: mouse => {
-                    if (pressed) updateVal(mouse)
+                    if (pressed) {
+                        updateVal(mouse)
+                    }
                 }
-                onReleased: root.isDragging = false
-                onCanceled: root.isDragging = false
-                onWheel: wheel => {                               // scroll to adjust
-                    let step = root.maxValue * 0.05               // 5% of the range
+
+                onReleased: {
+                    root.isDragging = false
+                    if (root.rubberOffset !== 0) {
+                        snapBackAnim.restart()
+                    }
+                    hideDialTimer.restart()
+                }
+
+                onCanceled: {
+                    root.isDragging = false
+                    if (root.rubberOffset !== 0) {
+                        snapBackAnim.restart()
+                    }
+                    hideDialTimer.restart()
+                }
+
+                onWheel: wheel => {
+                    let step = root.maxValue * 0.05
                     let delta = wheel.angleDelta.y > 0 ? step : -step
                     let newVal = Math.max(0, Math.min(root.maxValue, root.value + delta))
+                    root.fineTuningActive = true
+                    hideDialTimer.restart()
                     root.valueChangedByUser(newVal)
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    //  SAFE-LOCK DIAL CIRCULAR PIP (Careful Fine-Tuning Mode)
+    // =========================================================================
+    //  Floats adjacent to the slider handle, tracking its X position smoothly.
+    //  Features:
+    //    • Rotating safe combination dial with 24 precision tick marks
+    //    • 12 o'clock notch pointer with mechanical pulse on each tick
+    //    • Center vault core displaying live numeric percentage
+    //    • Downward pip stem pointing directly to the handle
+    Item {
+        id: safeDialPip
+        width: 52
+        height: 52
+        z: 200
+
+        // Center directly above the slider handle, clamped safely inside parent width
+        x: Math.max(4, Math.min(root.width - width - 4, trackSeg.x + sliderBox.x + handle.x + handle.width / 2 - width / 2))
+        y: -height - 8
+
+        Behavior on x {
+            NumberAnimation { duration: 60; easing.type: Easing.OutCubic }
+        }
+
+        // Active when tuning carefully; tucked away during violent yank outside limit
+        readonly property bool shouldShow: (root.isDragging || root.fineTuningActive) && (!root.isFastYank || Math.abs(root.rubberOffset) < 6)
+
+        scale: shouldShow ? 1.0 : 0.4
+        opacity: shouldShow ? 1.0 : 0.0
+
+        Behavior on scale {
+            NumberAnimation { duration: 240; easing.type: Easing.OutBack }
+        }
+        Behavior on opacity {
+            NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+        }
+
+        // --- Downward stem pointing to the handle -------------------------------
+        Rectangle {
+            width: 10
+            height: 10
+            radius: 2
+            rotation: 45
+            color: Theme.qsBg
+            border.color: Theme.pillBorder
+            border.width: 1
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: -3
+            z: 1
+        }
+
+        // --- Outer circular dial body -------------------------------------------
+        Rectangle {
+            id: dialBody
+            anchors.fill: parent
+            radius: width / 2
+            color: Theme.qsBg
+            border.color: Theme.pillBorder
+            border.width: 1.5
+            z: 2
+
+            // Subtle inner bevel shadow ring
+            Rectangle {
+                anchors.centerIn: parent
+                width: parent.width - 4
+                height: parent.height - 4
+                radius: width / 2
+                color: "transparent"
+                border.color: Theme.ink
+                opacity: 0.15
+                border.width: 1
+            }
+
+            // --- Rotating Tick Disc (The Safe Combination Dial) -----------------
+            Item {
+                id: tickDisc
+                anchors.centerIn: parent
+                width: 44
+                height: 44
+                rotation: root.dialRotation
+
+                // 24 radial tick marks around the safe lock dial
+                Repeater {
+                    model: 24
+                    Item {
+                        anchors.centerIn: parent
+                        width: parent.width
+                        height: parent.height
+                        rotation: index * 15
+
+                        Rectangle {
+                            anchors.top: parent.top
+                            anchors.topMargin: 2
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            width: (index % 4 === 0) ? 2 : 1
+                            height: (index % 4 === 0) ? 5 : 3
+                            radius: 0.5
+                            color: (index % 4 === 0) ? Theme.attention : Theme.ink
+                            opacity: (index % 4 === 0) ? 0.95 : 0.45
+                        }
+                    }
+                }
+            }
+
+            // --- 12 o'clock Safe Index Notch Pointer ----------------------------
+            Rectangle {
+                id: notchIndicator
+                width: 3
+                height: 5
+                radius: 1
+                color: Theme.attention
+                anchors.top: parent.top
+                anchors.topMargin: 2
+                anchors.horizontalCenter: parent.horizontalCenter
+                z: 10
+
+                // Quick bounce on every mechanical tick
+                SequentialAnimation {
+                    id: tickPulse
+                    NumberAnimation {
+                        target: notchIndicator
+                        property: "scale"
+                        to: 1.45
+                        duration: 35
+                        easing.type: Easing.OutQuad
+                    }
+                    NumberAnimation {
+                        target: notchIndicator
+                        property: "scale"
+                        to: 1.0
+                        duration: 55
+                        easing.type: Easing.OutQuad
+                    }
+                }
+            }
+
+            // --- Center Core Bezel with Numeric Percentage Value ----------------
+            Rectangle {
+                id: centerHub
+                width: 28
+                height: 28
+                radius: 14
+                color: Theme.primary
+                border.color: Theme.pillBorder
+                border.width: 1
+                anchors.centerIn: parent
+                z: 15
+
+                Text {
+                    id: numericValueTxt
+                    anchors.centerIn: parent
+                    text: Math.round(root.effectiveValue * 100) + "%"
+                    font.family: Theme.fontText
+                    font.pixelSize: 9
+                    font.bold: true
+                    color: Theme.ink
                 }
             }
         }

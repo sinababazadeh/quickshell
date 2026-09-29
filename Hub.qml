@@ -1100,8 +1100,8 @@ Pill {
                         // ─── BROWSER-STYLE TOP TABS: Calendar | Theme | Settings ─────
                         // Each tab = an icon pill + a name pill. The name pill EXPANDS
                         // (showing the tab name) while you're inside that tab and
-                        // RETRACTS to a stub 3.5× the half-icon size (45.5px = 1.75×
-                        // the 26px icon pill) when the tab is closed. Same 320ms
+                        // RETRACTS to match the icon width (26px) when the tab is closed,
+                        // giving a balanced, equal-sized pill when collapsed. Same 320ms
                         // OutCubic expand/compact motion as the notification banner
                         // in Pill.qml.
                         RowLayout {
@@ -1142,7 +1142,7 @@ Pill {
                                 Rectangle {
                                     id: tabCalLabel
                                     height: parent.height
-                                    width: root.currentTab === "calendar" ? tabCalTxt.implicitWidth + 14 : tabCalIcon.width * 1.75
+                                    width: root.currentTab === "calendar" ? tabCalTxt.implicitWidth + 14 : tabCalIcon.width
                                     clip: true   // name is clipped away while the pill retracts
                                     anchors.left: tabCalIcon.right
                                     anchors.verticalCenter: parent.verticalCenter
@@ -1213,7 +1213,7 @@ Pill {
                                 Rectangle {
                                     id: tabThemeLabel
                                     height: parent.height
-                                    width: root.currentTab === "theme" ? tabThemeTxt.implicitWidth + 14 : tabThemeIcon.width * 1.75
+                                    width: root.currentTab === "theme" ? tabThemeTxt.implicitWidth + 14 : tabThemeIcon.width
                                     clip: true   // name is clipped away while the pill retracts
                                     anchors.left: tabThemeIcon.right
                                     anchors.verticalCenter: parent.verticalCenter
@@ -1284,7 +1284,7 @@ Pill {
                                 Rectangle {
                                     id: tabNotifLabel
                                     height: parent.height
-                                    width: root.currentTab === "notifications" ? tabNotifRow.implicitWidth + 14 : tabNotifIcon.width * 1.75
+                                    width: root.currentTab === "notifications" ? tabNotifRow.implicitWidth + 14 : tabNotifIcon.width
                                     clip: true   // name is clipped away while the pill retracts
                                     anchors.left: tabNotifIcon.right
                                     anchors.verticalCenter: parent.verticalCenter
@@ -1379,7 +1379,7 @@ Pill {
                                 Rectangle {
                                     id: tabSettingsLabel
                                     height: parent.height
-                                    width: root.currentTab === "settings" ? tabSettingsTxt.implicitWidth + 14 : tabSettingsIcon.width * 1.75
+                                    width: root.currentTab === "settings" ? tabSettingsTxt.implicitWidth + 14 : tabSettingsIcon.width
                                     clip: true   // name is clipped away while the pill retracts
                                     anchors.left: tabSettingsIcon.right
                                     anchors.verticalCenter: parent.verticalCenter
@@ -1459,6 +1459,9 @@ Pill {
                                     Layout.fillWidth: true
                                     Layout.fillHeight: true
                                     clip: true
+                                    boundsBehavior: Flickable.StopAtBounds
+                                    interactive: contentHeight > height
+                                    flickableDirection: Flickable.VerticalFlick
                                     contentWidth: width
                                     contentHeight: settingsCol.implicitHeight
 
