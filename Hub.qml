@@ -438,11 +438,15 @@ Pill {
     }
 
     //  6. Wallpaper scanner (find) — feeds the Theme tab's wallpaper picker.
-    //  Top level of the config's wallpapers folder only.
+    //  Top level of the config's wallpapers folder only. Automatically sanitizes
+    //  and converts any WebP, AVIF, or renamed images into standard JPEG first.
     Process {
         id: wallScanProc
         command: ["bash", "-c",
-                  "find \"$HOME/.config/quickshell/wallpapers\" -maxdepth 1 -type f "
+                  "if [ -x \"$HOME/.config/quickshell/sanitize-wallpapers.sh\" ]; then "
+                  + "\"$HOME/.config/quickshell/sanitize-wallpapers.sh\" \"$HOME/.config/quickshell/wallpapers\" 2>/dev/null; "
+                  + "fi; "
+                  + "find \"$HOME/.config/quickshell/wallpapers\" -maxdepth 1 -type f "
                   + "\\( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' "
                   + "-o -iname '*.webp' -o -iname '*.bmp' -o -iname '*.gif' \\) | sort"]
         stdout: StdioCollector {
@@ -483,12 +487,15 @@ Pill {
     }
 
     //  8. Wallpaper importer — copies a picked ~/Pictures image into the
-    //     wallpapers folder, then rescans so it shows up everywhere.
+    //     wallpapers folder, sanitizes format, then rescans so it shows up everywhere.
     Process {
         id: importProc
         property string source: ""
         command: ["bash", "-c",
-                  "cp -n \"$1\" \"$HOME/.config/quickshell/wallpapers/\"",
+                  "cp -n \"$1\" \"$HOME/.config/quickshell/wallpapers/\" && "
+                  + "if [ -x \"$HOME/.config/quickshell/sanitize-wallpapers.sh\" ]; then "
+                  + "\"$HOME/.config/quickshell/sanitize-wallpapers.sh\" \"$HOME/.config/quickshell/wallpapers\" 2>/dev/null; "
+                  + "fi",
                   "bash",
                   source]
         onExited: root.refreshWallpapers()
@@ -2088,11 +2095,37 @@ Pill {
                                             anchors.rightMargin: -65
 
                                             Image {
+                                                id: prevCardImg
                                                 anchors.fill: parent
                                                 anchors.margins: 2
                                                 source: wallCarousel.prevWp
                                                 fillMode: Image.PreserveAspectCrop
                                                 asynchronous: true
+                                            }
+
+                                            Rectangle {
+                                                visible: prevCardImg.status === Image.Error
+                                                anchors.fill: parent
+                                                color: Theme.qsBg
+                                                opacity: 0.95
+                                                Column {
+                                                    anchors.centerIn: parent
+                                                    spacing: 2
+                                                    Text {
+                                                        text: "warning"
+                                                        font.family: Theme.fontIcons
+                                                        font.pixelSize: 18
+                                                        color: Theme.attention
+                                                        anchors.horizontalCenter: parent.horizontalCenter
+                                                    }
+                                                    Text {
+                                                        text: "Format Error"
+                                                        font.family: Theme.fontText
+                                                        font.pixelSize: 10
+                                                        color: Theme.qsTextMuted
+                                                        anchors.horizontalCenter: parent.horizontalCenter
+                                                    }
+                                                }
                                             }
 
                                             MouseArea {
@@ -2125,11 +2158,37 @@ Pill {
                                             anchors.leftMargin: -65
 
                                             Image {
+                                                id: nextCardImg
                                                 anchors.fill: parent
                                                 anchors.margins: 2
                                                 source: wallCarousel.nextWp
                                                 fillMode: Image.PreserveAspectCrop
                                                 asynchronous: true
+                                            }
+
+                                            Rectangle {
+                                                visible: nextCardImg.status === Image.Error
+                                                anchors.fill: parent
+                                                color: Theme.qsBg
+                                                opacity: 0.95
+                                                Column {
+                                                    anchors.centerIn: parent
+                                                    spacing: 2
+                                                    Text {
+                                                        text: "warning"
+                                                        font.family: Theme.fontIcons
+                                                        font.pixelSize: 18
+                                                        color: Theme.attention
+                                                        anchors.horizontalCenter: parent.horizontalCenter
+                                                    }
+                                                    Text {
+                                                        text: "Format Error"
+                                                        font.family: Theme.fontText
+                                                        font.pixelSize: 10
+                                                        color: Theme.qsTextMuted
+                                                        anchors.horizontalCenter: parent.horizontalCenter
+                                                    }
+                                                }
                                             }
 
                                             MouseArea {
@@ -2159,11 +2218,70 @@ Pill {
                                             anchors.verticalCenterOffset: -4
 
                                             Image {
+                                                id: centerCardImg
                                                 anchors.fill: parent
                                                 anchors.margins: 2
                                                 source: wallCarousel.activeWp
                                                 fillMode: Image.PreserveAspectCrop
                                                 asynchronous: true
+                                            }
+
+                                            Rectangle {
+                                                visible: centerCardImg.status === Image.Error
+                                                anchors.fill: parent
+                                                color: Theme.qsBg
+                                                z: 2
+                                                Column {
+                                                    anchors.centerIn: parent
+                                                    spacing: 4
+                                                    Text {
+                                                        text: "broken_image"
+                                                        font.family: Theme.fontIcons
+                                                        font.pixelSize: 26
+                                                        color: Theme.attention
+                                                        anchors.horizontalCenter: parent.horizontalCenter
+                                                    }
+                                                    Text {
+                                                        text: "Unsupported Format"
+                                                        font.family: Theme.fontText
+                                                        font.pixelSize: 11
+                                                        font.weight: Font.DemiBold
+                                                        color: Theme.qsText
+                                                        anchors.horizontalCenter: parent.horizontalCenter
+                                                    }
+                                                    Rectangle {
+                                                        width: 110
+                                                        height: 22
+                                                        radius: 11
+                                                        color: Theme.attention
+                                                        anchors.horizontalCenter: parent.horizontalCenter
+                                                        Text {
+                                                            anchors.centerIn: parent
+                                                            text: "Auto-Fix to JPG"
+                                                            font.family: Theme.fontText
+                                                            font.pixelSize: 10
+                                                            font.weight: Font.Bold
+                                                            color: Theme.qsBg
+                                                        }
+                                                        MouseArea {
+                                                            anchors.fill: parent
+                                                            cursorShape: Qt.PointingHandCursor
+                                                            onClicked: {
+                                                                if (wallCarousel.activeWp) {
+                                                                    WallpaperState.sanitizeFile(wallCarousel.activeWp)
+                                                                    fixTimer.restart()
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            Timer {
+                                                id: fixTimer
+                                                interval: 600
+                                                repeat: false
+                                                onTriggered: root.refreshWallpapers()
                                             }
 
                                             // Subtitle badge showing wallpaper filename

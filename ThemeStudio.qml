@@ -43,6 +43,11 @@ PanelWindow {
         onStatusChanged: {
             if (status === Image.Ready) {
                 sampleCanvas.requestPaint()
+            } else if (status === Image.Error) {
+                console.warn("[ThemeStudio] Active wallpaper failed to decode, trying fallback:", source)
+                if (WallpaperState.fallbackWallpaper && source.toString() !== WallpaperState.fallbackWallpaper) {
+                    source = WallpaperState.fallbackWallpaper
+                }
             }
         }
     }

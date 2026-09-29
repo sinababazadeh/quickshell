@@ -56,7 +56,13 @@ PanelWindow {
         sourceSize.height: root.height
 
         Behavior on opacity { NumberAnimation { duration: 600; easing.type: Easing.InOutQuad } }
-        onStatusChanged: root.checkLoaded(imgA)
+        onStatusChanged: {
+            if (status === Image.Error) {
+                console.warn("[Wallpaper] imgA failed to decode:", source)
+                if (root.showA) WallpaperState.fallbackToSafeDefault()
+            }
+            root.checkLoaded(imgA)
+        }
     }
 
     // ─── Layer B ─────────────────────────────────────────────────────────────────
@@ -70,7 +76,13 @@ PanelWindow {
         sourceSize.height: root.height
 
         Behavior on opacity { NumberAnimation { duration: 600; easing.type: Easing.InOutQuad } }
-        onStatusChanged: root.checkLoaded(imgB)
+        onStatusChanged: {
+            if (status === Image.Error) {
+                console.warn("[Wallpaper] imgB failed to decode:", source)
+                if (!root.showA) WallpaperState.fallbackToSafeDefault()
+            }
+            root.checkLoaded(imgB)
+        }
     }
 
     // ─── First paint ─────────────────────────────────────────────────────────────
@@ -90,14 +102,15 @@ PanelWindow {
     // flips `showA` and the two opacities crossfade. If the visible layer never
     // got an image (startup race with the state reader), just paint instantly.
     function swapTo(path) {
+        if (!path || path === "") return
         let visible = root.showA ? imgA : imgB
-        if (visible.source.toString() === path) return
-        if (visible.source.toString() === "") {
+        if (visible.source.toString() === path && visible.status === Image.Ready) return
+        if (visible.source.toString() === "" || visible.status === Image.Error) {
             visible.source = path
             return
         }
         let hidden = root.showA ? imgB : imgA
-        if (hidden.source.toString() === path) return
+        if (hidden.source.toString() === path && hidden.status === Image.Ready) return
         root.incoming = hidden
         hidden.source = path
     }
@@ -105,6 +118,15 @@ PanelWindow {
     // Called by both images when their status changes.
     function checkLoaded(img) {
         if (root.incoming !== img) return
+        if (img.status === Image.Error) {
+            console.warn("[Wallpaper] incoming wallpaper failed to decode:", img.source)
+            root.incoming = null
+            let visible = root.showA ? imgA : imgB
+            if (visible.status === Image.Error || visible.source.toString() === "") {
+                WallpaperState.fallbackToSafeDefault()
+            }
+            return
+        }
         if (img.status !== Image.Ready) return
         root.incoming = null
         root.showA = !root.showA   // opacities animate via the Behaviors above
