@@ -80,4 +80,10 @@ Rectangle {
         cursorShape: Qt.PointingHandCursor
         onClicked: root.clicked()
     }
+
+    // ── Hover feedback ─────────────────────────────────────────────────────────
+    // The exact lift the Wi-Fi / Bluetooth tiles use (RadioPill.qml): the pill
+    // swells to 103 % under the pointer and springs back on the way out, so the
+    // power actions feel like every other control in the Hub.
+    HoverLift { }
 }

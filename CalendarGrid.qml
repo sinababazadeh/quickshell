@@ -72,6 +72,8 @@ Rectangle {
                     cursorShape: Qt.PointingHandCursor
                     onClicked: root.monthOffset--
                 }
+
+                HoverLift { }
             }
 
             // Next month
@@ -94,6 +96,8 @@ Rectangle {
                     cursorShape: Qt.PointingHandCursor
                     onClicked: root.monthOffset++
                 }
+
+                HoverLift { }
             }
         }
 

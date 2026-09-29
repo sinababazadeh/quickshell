@@ -35,6 +35,8 @@ Wallpaper        1.0 Wallpaper.qml                # per-monitor background surfa
 Pill           1.0 Pill.qml          # 2-part capsule: icon | label
 ActionPill     1.0 ActionPill.qml    # Like Pill, but stretches to fill width
 QuickToggle    1.0 QuickToggle.qml   # Big toggle tile: icon + title/status + chevron
+RadioPill      1.0 RadioPill.qml     # Responsive Wi-Fi/BT tile: press + hover + glyph morph + busy spinner
+HoverLift      1.0 HoverLift.qml     # Passive handler that gives ANY button the radio tiles' hover lift
 CustomSlider   1.0 CustomSlider.qml  # Slider tile: icon + draggable track
 
 # --- Bar widgets (one file per feature on the top bar) -----------------------

@@ -158,6 +158,14 @@ Pill {
     // ─── Settings sub-pages (opened by the toggle ">" chevrons) ──────────────────
     // "main" = sliders/toggles · "wifi"/"bluetooth" = the detail lists.
     // The pages live as extra children of the tab StackLayout (see below).
+    //
+    // The Wi-Fi / Bluetooth controls at the top of "main" are RadioPill.qml
+    // tiles (see that file). Each one animates press/hover and shows LIVE state
+    // on its second line — the SSID we're on for Wi-Fi, the connected device
+    // name for Bluetooth. The glyph itself is a plain FIXED symbol on/off: it
+    // never spins, pops or signal-flickers. That live text comes from the
+    // `wifiStatusText` / `btStatusText` one-liners built from the state
+    // collectors below (`wifiStateProc` / `btStateProc`).
     property string hubPage: "main"
     property var wifiNetworks: []            // parsed nmcli scan: {active, ssid, signal, security}
     property var btDevices: []               // parsed bluetoothctl devices: {mac, name}
@@ -206,6 +214,23 @@ Pill {
     property bool wifiActive: true
     property bool btActive: true
 
+    // ─── Radio detail state (feeds the responsive Wi-Fi / BT tiles) ──────────────
+    // The tiles read these; the Process blocks below keep them fresh.
+    property string wifiSsid: ""            // SSID we are joined to ("" = none)
+    property bool wifiBusy: false           // an nmcli command is in flight
+    property string btDevice: ""            // name of the connected BT device ("" = none)
+    property int btConnected: 0             // how many BT devices are connected
+    property bool btBusy: false             // a bluetoothctl command is in flight
+
+    // ─── Derived one-liners shown on the second line of each tile ────────────────
+    readonly property string wifiStatusText: root.wifiBusy
+        ? (root.wifiActive ? "Turning on…" : "Turning off…")
+        : (!root.wifiActive ? "Off" : (root.wifiSsid !== "" ? root.wifiSsid : "Not connected"))
+
+    readonly property string btStatusText: root.btBusy
+        ? (root.btActive ? "Turning on…" : "Turning off…")
+        : (!root.btActive ? "Off" : (root.btConnected > 0 ? root.btDevice : "Not connected"))
+
     // ─── Self-contained clock ───────────────────────────────────────────────────
     SystemClock {
         id: clock
@@ -234,21 +259,115 @@ Pill {
         }
     }
 
-    //  2. Wi-Fi radio state  ("enabled" | "disabled")
+    //  2. Wi-Fi state + live connection  (radio | "*:SSID")
+    //  One shell call answers BOTH "is the radio on?" and "what am I joined
+    //  to?" — the tile needs the second half for its status line. SIGNAL is
+    //  deliberately NOT requested: the tile's glyph is fixed (see RadioPill),
+    //  so the reading would only be an unused number that wobbles.
+    //  Example output:   enabled|*:My WiFi
     Process {
         id: wifiStateProc
-        command: ["bash", "-c", "nmcli radio wifi"]
+        command: ["bash", "-c",
+                  "r=$(nmcli radio wifi); "
+                  + "i=$(nmcli -t -f IN-USE,SSID device wifi list 2>/dev/null | grep '^\\*' | head -n1); "
+                  + "echo \"$r|$i\""]
+
         stdout: SplitParser {
-            onRead: data => { root.wifiActive = data.trim().toLowerCase().startsWith("enabled") }
+            onRead: data => {
+                let raw = data.trim()
+                let bar = raw.indexOf("|")
+                if (bar < 0) return
+
+                // Left of the "|" → the radio state.
+                root.wifiActive = raw.slice(0, bar).toLowerCase().startsWith("enabled")
+
+                // Right of the "|" → "*:SSID" for the network we are joined to,
+                // or "" when nothing is connected. nmcli escapes a ":" inside
+                // an SSID as "\:", so undo that before showing the name.
+                root.wifiSsid = raw.slice(bar + 1)
+                                   .replace(/^\*:/, "")
+                                   .replace(/\\:/g, ":")
+            }
+        }
+
+        // The command has answered → the tile may leave its busy state.
+        onExited: root.wifiBusy = false
+    }
+
+    //  3. Bluetooth state + live connection  (on/off | count | first device)
+    //  Example output:   on|1|QCY-T13 ANC
+    Process {
+        id: btStateProc
+        command: ["bash", "-c",
+                  "p=$(bluetoothctl show 2>/dev/null | grep -q 'Powered: yes' && echo on || echo off); "
+                  + "c=$(bluetoothctl devices Connected 2>/dev/null | grep -c . ); "
+                  + "d=$(bluetoothctl devices Connected 2>/dev/null | head -n1 | cut -d' ' -f3-); "
+                  + "echo \"$p|$c|$d\""]
+
+        stdout: SplitParser {
+            onRead: data => {
+                let parts = data.trim().split("|")
+                if (parts.length < 3) return
+                root.btActive = (parts[0] === "on")
+                root.btConnected = parseInt(parts[1]) || 0
+                root.btDevice = parts[2] || ""
+            }
+        }
+
+        onExited: root.btBusy = false
+    }
+
+    // ─── Radio follow-up timers (shared by the Wi-Fi / BT tiles) ────────────────
+    // After a radio command we WAIT a moment before re-reading: nmcli and
+    // bluetoothctl answer asynchronously, so asking instantly would read the OLD
+    // state and make the tile snap straight back.
+    Timer {
+        id: wifiSettle
+        interval: 900
+        repeat: false
+        onTriggered: if (!wifiStateProc.running) wifiStateProc.running = true
+    }
+
+    Timer {
+        id: btSettle
+        interval: 900
+        repeat: false
+        onTriggered: if (!btStateProc.running) btStateProc.running = true
+    }
+
+    // Safety nets: if a reader never runs (or its `onExited` never lands), clear
+    // `busy` anyway so a tile can't be left stuck in its half-lit working state.
+    Timer {
+        id: wifiWatchdog
+        interval: 6000
+        repeat: false
+        onTriggered: {
+            root.wifiBusy = false
+            if (!wifiStateProc.running) wifiStateProc.running = true
         }
     }
 
-    //  3. Bluetooth powered state  ("on" | "off")
-    Process {
-        id: btStateProc
-        command: ["bash", "-c", "bluetoothctl show | grep -q 'Powered: yes' && echo on || echo off"]
-        stdout: SplitParser {
-            onRead: data => { root.btActive = (data.trim() === "on") }
+    Timer {
+        id: btWatchdog
+        interval: 6000
+        repeat: false
+        onTriggered: {
+            root.btBusy = false
+            if (!btStateProc.running) btStateProc.running = true
+        }
+    }
+
+    // Keep both tiles LIVE while the Settings page is on screen (radio state,
+    // SSID, connected device). Cheap: two short reads every 5 s, and never
+    // while a toggle is already waiting on its own read.
+    Timer {
+        id: radioPollTimer
+        interval: 5000
+        running: popup.visible && root.currentTab === "settings"
+        repeat: true
+        onTriggered: {
+            if (!root.wifiBusy && !wifiStateProc.running) wifiStateProc.running = true
+            if (!root.btBusy && !btStateProc.running) btStateProc.running = true
         }
     }
 
@@ -424,6 +543,9 @@ Pill {
         }
     }
 
+    // Same hover lift the Wi-Fi/BT tiles use — the bar pill is a button too.
+    HoverLift { }
+
     function toggle() {
         if (popup.visible) root.collapse()
         else root.expand()
@@ -502,6 +624,29 @@ Pill {
         btScanner.running = true
     }
 
+    // ─── Radio toggles (called by the Wi-Fi / BT tiles) ─────────────────────────
+    // The FLIP IS OPTIMISTIC: the boolean flips immediately so the tile can
+    // animate right away, then `settle`/`watchdog` re-read the real state and
+    // correct us if the command failed. `busy` holds the half-lit "working"
+    // state (and blocks re-clicks) until then.
+    function toggleWifi() {
+        if (root.wifiBusy) return                       // ignore re-clicks mid-flight
+        root.wifiBusy = true
+        root.wifiActive = !root.wifiActive
+        Quickshell.execDetached(["nmcli", "radio", "wifi", root.wifiActive ? "on" : "off"])
+        wifiSettle.restart()
+        wifiWatchdog.restart()
+    }
+
+    function toggleBt() {
+        if (root.btBusy) return
+        root.btBusy = true
+        root.btActive = !root.btActive
+        Quickshell.execDetached(["bluetoothctl", "power", root.btActive ? "on" : "off"])
+        btSettle.restart()
+        btWatchdog.restart()
+    }
+
     function refreshWallpapers() {
         wallScanProc.running = true
     }
@@ -528,8 +673,13 @@ Pill {
     function setTab(tab) {
         root.currentTab = tab
         // Landing on settings always starts at its main page
-        // (never on a stale wifi/bluetooth sub-page).
-        if (tab === "settings") root.hubPage = "main"
+        // (never on a stale wifi/bluetooth sub-page) and re-reads the radios,
+        // so the Wi-Fi / BT tiles never show a stale SSID or device name.
+        if (tab === "settings") {
+            root.hubPage = "main"
+            if (!wifiStateProc.running) wifiStateProc.running = true
+            if (!btStateProc.running) btStateProc.running = true
+        }
         // Opening the theme tab refreshes the wallpaper list.
         if (tab === "theme") {
             root.themePage = "picker"
@@ -948,6 +1098,12 @@ Pill {
                             spacing: 8
 
                         // ─── BROWSER-STYLE TOP TABS: Calendar | Theme | Settings ─────
+                        // Each tab = an icon pill + a name pill. The name pill EXPANDS
+                        // (showing the tab name) while you're inside that tab and
+                        // RETRACTS to a stub 3.5× the half-icon size (45.5px = 1.75×
+                        // the 26px icon pill) when the tab is closed. Same 320ms
+                        // OutCubic expand/compact motion as the notification banner
+                        // in Pill.qml.
                         RowLayout {
                             id: tabBarRow
                             opacity: 1
@@ -986,7 +1142,8 @@ Pill {
                                 Rectangle {
                                     id: tabCalLabel
                                     height: parent.height
-                                    width: tabCalTxt.implicitWidth + 14
+                                    width: root.currentTab === "calendar" ? tabCalTxt.implicitWidth + 14 : tabCalIcon.width * 1.75
+                                    clip: true   // name is clipped away while the pill retracts
                                     anchors.left: tabCalIcon.right
                                     anchors.verticalCenter: parent.verticalCenter
                                     color: root.currentTab === "calendar" ? Theme.attention : Theme.primary
@@ -995,8 +1152,18 @@ Pill {
                                     topRightRadius: height / 2
                                     bottomRightRadius: height / 2
 
+                                    // Expand/compact motion - identical to the notification banner's
+                                    // expansion/compaction in Pill.qml (320ms OutCubic).
+                                    Behavior on width {
+                                        NumberAnimation { duration: 320; easing.type: Easing.OutCubic }
+                                    }
+
                                     Text {
                                         id: tabCalTxt
+                                        opacity: root.currentTab === "calendar" ? 1 : 0   // fades as the pill grows/retracts
+                                        Behavior on opacity {
+                                            NumberAnimation { duration: 320; easing.type: Easing.OutCubic }
+                                        }
                                         anchors.centerIn: parent
                                         text: "Calendar"
                                         font.family: Theme.fontText
@@ -1011,6 +1178,8 @@ Pill {
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: root.setTab("calendar")
                                 }
+
+                                HoverLift { }
                             }
 
                             // ── Theme tab ──
@@ -1044,7 +1213,8 @@ Pill {
                                 Rectangle {
                                     id: tabThemeLabel
                                     height: parent.height
-                                    width: tabThemeTxt.implicitWidth + 14
+                                    width: root.currentTab === "theme" ? tabThemeTxt.implicitWidth + 14 : tabThemeIcon.width * 1.75
+                                    clip: true   // name is clipped away while the pill retracts
                                     anchors.left: tabThemeIcon.right
                                     anchors.verticalCenter: parent.verticalCenter
                                     color: root.currentTab === "theme" ? Theme.attention : Theme.primary
@@ -1053,8 +1223,18 @@ Pill {
                                     topRightRadius: height / 2
                                     bottomRightRadius: height / 2
 
+                                    // Expand/compact motion - identical to the notification banner's
+                                    // expansion/compaction in Pill.qml (320ms OutCubic).
+                                    Behavior on width {
+                                        NumberAnimation { duration: 320; easing.type: Easing.OutCubic }
+                                    }
+
                                     Text {
                                         id: tabThemeTxt
+                                        opacity: root.currentTab === "theme" ? 1 : 0   // fades as the pill grows/retracts
+                                        Behavior on opacity {
+                                            NumberAnimation { duration: 320; easing.type: Easing.OutCubic }
+                                        }
                                         anchors.centerIn: parent
                                         text: "Theme"
                                         font.family: Theme.fontText
@@ -1069,6 +1249,8 @@ Pill {
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: root.setTab("theme")
                                 }
+
+                                HoverLift { }
                             }
 
                             // ── Notifications tab ──
@@ -1102,7 +1284,8 @@ Pill {
                                 Rectangle {
                                     id: tabNotifLabel
                                     height: parent.height
-                                    width: tabNotifRow.implicitWidth + 14
+                                    width: root.currentTab === "notifications" ? tabNotifRow.implicitWidth + 14 : tabNotifIcon.width * 1.75
+                                    clip: true   // name is clipped away while the pill retracts
                                     anchors.left: tabNotifIcon.right
                                     anchors.verticalCenter: parent.verticalCenter
                                     color: root.currentTab === "notifications" ? Theme.attention : Theme.primary
@@ -1111,8 +1294,18 @@ Pill {
                                     topRightRadius: height / 2
                                     bottomRightRadius: height / 2
 
+                                    // Expand/compact motion - identical to the notification banner's
+                                    // expansion/compaction in Pill.qml (320ms OutCubic).
+                                    Behavior on width {
+                                        NumberAnimation { duration: 320; easing.type: Easing.OutCubic }
+                                    }
+
                                     RowLayout {
                                         id: tabNotifRow
+                                        opacity: root.currentTab === "notifications" ? 1 : 0   // fades as the pill grows/retracts
+                                        Behavior on opacity {
+                                            NumberAnimation { duration: 320; easing.type: Easing.OutCubic }
+                                        }
                                         anchors.centerIn: parent
                                         spacing: 4
 
@@ -1151,6 +1344,8 @@ Pill {
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: root.setTab("notifications")
                                 }
+
+                                HoverLift { }
                             }
 
                             // ── Settings tab ──
@@ -1184,7 +1379,8 @@ Pill {
                                 Rectangle {
                                     id: tabSettingsLabel
                                     height: parent.height
-                                    width: tabSettingsTxt.implicitWidth + 14
+                                    width: root.currentTab === "settings" ? tabSettingsTxt.implicitWidth + 14 : tabSettingsIcon.width * 1.75
+                                    clip: true   // name is clipped away while the pill retracts
                                     anchors.left: tabSettingsIcon.right
                                     anchors.verticalCenter: parent.verticalCenter
                                     color: root.currentTab === "settings" ? Theme.attention : Theme.primary
@@ -1193,8 +1389,18 @@ Pill {
                                     topRightRadius: height / 2
                                     bottomRightRadius: height / 2
 
+                                    // Expand/compact motion - identical to the notification banner's
+                                    // expansion/compaction in Pill.qml (320ms OutCubic).
+                                    Behavior on width {
+                                        NumberAnimation { duration: 320; easing.type: Easing.OutCubic }
+                                    }
+
                                     Text {
                                         id: tabSettingsTxt
+                                        opacity: root.currentTab === "settings" ? 1 : 0   // fades as the pill grows/retracts
+                                        Behavior on opacity {
+                                            NumberAnimation { duration: 320; easing.type: Easing.OutCubic }
+                                        }
                                         anchors.centerIn: parent
                                         text: "Settings"
                                         font.family: Theme.fontText
@@ -1209,6 +1415,8 @@ Pill {
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: root.setTab("settings")
                                 }
+
+                                HoverLift { }
                             }
 
                             Item { Layout.fillWidth: true }
@@ -1264,175 +1472,33 @@ Pill {
                                             Layout.fillWidth: true
                                             spacing: 6
 
-                                            // ── Wi-Fi Pill (Toggle + Subpage Arrow) ──
-                                            Rectangle {
-                                                Layout.fillWidth: true
-                                                implicitHeight: 34
-                                                color: "transparent"
-
-                                                Rectangle {
-                                                    id: wifiIconSeg
-                                                    width: wifiIconTxt.width + 12
-                                                    height: parent.height
-                                                    anchors.left: parent.left
-                                                    anchors.verticalCenter: parent.verticalCenter
-                                                    color: root.wifiActive ? Theme.attention : Theme.plum
-                                                    topLeftRadius: height / 2
-                                                    bottomLeftRadius: height / 2
-                                                    topRightRadius: 0
-                                                    bottomRightRadius: 0
-
-                                                    Text {
-                                                        id: wifiIconTxt
-                                                        anchors.centerIn: parent
-                                                        text: "wifi"
-                                                        font.family: Theme.fontIcons
-                                                        font.pixelSize: 16
-                                                        color: root.wifiActive ? Theme.qsOnAccent : Theme.ink
-                                                        leftPadding: 3
-                                                    }
-
-                                                    MouseArea {
-                                                        anchors.fill: parent
-                                                        cursorShape: Qt.PointingHandCursor
-                                                        onClicked: {
-                                                            root.wifiActive = !root.wifiActive
-                                                            Quickshell.execDetached(["nmcli", "radio", "wifi", root.wifiActive ? "on" : "off"])
-                                                        }
-                                                    }
-                                                }
-
-                                                Rectangle {
-                                                    anchors.left: wifiIconSeg.right
-                                                    anchors.right: parent.right
-                                                    height: parent.height
-                                                    anchors.verticalCenter: parent.verticalCenter
-                                                    color: Theme.primary
-                                                    topLeftRadius: 0
-                                                    bottomLeftRadius: 0
-                                                    topRightRadius: height / 2
-                                                    bottomRightRadius: height / 2
-
-                                                    RowLayout {
-                                                        anchors.fill: parent
-                                                        anchors.leftMargin: 6
-                                                        anchors.rightMargin: 6
-                                                        spacing: 2
-
-                                                        Text {
-                                                            text: "Wi-Fi"
-                                                            font.family: Theme.fontText
-                                                            font.pixelSize: 11
-                                                            font.bold: true
-                                                            color: Theme.ink
-                                                            Layout.fillWidth: true
-                                                            elide: Text.ElideRight
-                                                            Layout.alignment: Qt.AlignVCenter
-                                                        }
-
-                                                        Text {
-                                                            text: "chevron_right"
-                                                            font.family: Theme.fontIcons
-                                                            font.pixelSize: 14
-                                                            color: Theme.qsTextMuted
-                                                            Layout.alignment: Qt.AlignVCenter
-                                                        }
-                                                    }
-
-                                                    MouseArea {
-                                                        anchors.fill: parent
-                                                        cursorShape: Qt.PointingHandCursor
-                                                        onClicked: {
-                                                            root.hubPage = "wifi"
-                                                            root.refreshWifi()
-                                                        }
-                                                    }
+                                            // ── Wi-Fi Tile (responsive: press / hover / slow light-up / busy status) ──
+                                            RadioPill {
+                                                icon: "wifi"            // FIXED glyph (no morph, no spin)
+                                                iconOff: "wifi_off"
+                                                title: "Wi-Fi"
+                                                status: root.wifiStatusText
+                                                active: root.wifiActive
+                                                busy: root.wifiBusy
+                                                onToggled: root.toggleWifi()
+                                                onOpenDetails: {
+                                                    root.hubPage = "wifi"
+                                                    root.refreshWifi()
                                                 }
                                             }
 
-                                            // ── Bluetooth Pill (Toggle + Subpage Arrow) ──
-                                            Rectangle {
-                                                Layout.fillWidth: true
-                                                implicitHeight: 34
-                                                color: "transparent"
-
-                                                Rectangle {
-                                                    id: btIconSeg
-                                                    width: btIconTxt.width + 12
-                                                    height: parent.height
-                                                    anchors.left: parent.left
-                                                    anchors.verticalCenter: parent.verticalCenter
-                                                    color: root.btActive ? Theme.attention : Theme.plum
-                                                    topLeftRadius: height / 2
-                                                    bottomLeftRadius: height / 2
-                                                    topRightRadius: 0
-                                                    bottomRightRadius: 0
-
-                                                    Text {
-                                                        id: btIconTxt
-                                                        anchors.centerIn: parent
-                                                        text: "bluetooth"
-                                                        font.family: Theme.fontIcons
-                                                        font.pixelSize: 16
-                                                        color: root.btActive ? Theme.qsOnAccent : Theme.ink
-                                                        leftPadding: 3
-                                                    }
-
-                                                    MouseArea {
-                                                        anchors.fill: parent
-                                                        cursorShape: Qt.PointingHandCursor
-                                                        onClicked: {
-                                                            root.btActive = !root.btActive
-                                                            Quickshell.execDetached(["bluetoothctl", "power", root.btActive ? "on" : "off"])
-                                                        }
-                                                    }
-                                                }
-
-                                                Rectangle {
-                                                    anchors.left: btIconSeg.right
-                                                    anchors.right: parent.right
-                                                    height: parent.height
-                                                    anchors.verticalCenter: parent.verticalCenter
-                                                    color: Theme.primary
-                                                    topLeftRadius: 0
-                                                    bottomLeftRadius: 0
-                                                    topRightRadius: height / 2
-                                                    bottomRightRadius: height / 2
-
-                                                    RowLayout {
-                                                        anchors.fill: parent
-                                                        anchors.leftMargin: 6
-                                                        anchors.rightMargin: 6
-                                                        spacing: 2
-
-                                                        Text {
-                                                            text: "BT"
-                                                            font.family: Theme.fontText
-                                                            font.pixelSize: 11
-                                                            font.bold: true
-                                                            color: Theme.ink
-                                                            Layout.fillWidth: true
-                                                            elide: Text.ElideRight
-                                                            Layout.alignment: Qt.AlignVCenter
-                                                        }
-
-                                                        Text {
-                                                            text: "chevron_right"
-                                                            font.family: Theme.fontIcons
-                                                            font.pixelSize: 14
-                                                            color: Theme.qsTextMuted
-                                                            Layout.alignment: Qt.AlignVCenter
-                                                        }
-                                                    }
-
-                                                    MouseArea {
-                                                        anchors.fill: parent
-                                                        cursorShape: Qt.PointingHandCursor
-                                                        onClicked: {
-                                                            root.hubPage = "bluetooth"
-                                                            root.refreshBt()
-                                                        }
-                                                    }
+                                            // ── Bluetooth Tile (same responsive treatment) ──
+                                            RadioPill {
+                                                icon: "bluetooth"
+                                                iconOff: "bluetooth_disabled"
+                                                title: "BT"
+                                                status: root.btStatusText
+                                                active: root.btActive
+                                                busy: root.btBusy
+                                                onToggled: root.toggleBt()
+                                                onOpenDetails: {
+                                                    root.hubPage = "bluetooth"
+                                                    root.refreshBt()
                                                 }
                                             }
 
@@ -1524,6 +1590,8 @@ Pill {
                                                 cursorShape: Qt.PointingHandCursor
                                                 onClicked: root.hubPage = "main"
                                             }
+
+                                            HoverLift { }
                                         }
 
                                         Text {
@@ -1547,6 +1615,8 @@ Pill {
                                                 cursorShape: Qt.PointingHandCursor
                                                 onClicked: root.refreshWifi()
                                             }
+
+                                            HoverLift { }
                                         }
                                     }
 
@@ -1604,8 +1674,11 @@ Pill {
                                                         Text {
                                                             id: wifiRowIcon
                                                             anchors.centerIn: parent
-                                                            // Icon chosen from signal strength.
-                                                            text: modelData.signal > 60 ? "wifi" : (modelData.signal > 30 ? "wifi_2_bar" : "wifi_1_bar")
+                                                            // FIXED glyph on purpose: the list is already
+                                                            // ordered by strength (connected first, then
+                                                            // strongest), so a signal-derived icon would just
+                                                            // flicker between bars as the scan refreshes.
+                                                            text: "wifi"
                                                             font.family: Theme.fontIcons
                                                             font.pixelSize: 18
                                                             color: Theme.ink
@@ -1668,9 +1741,12 @@ Pill {
                                                                         if (!modelData.active) {
                                                                             Quickshell.execDetached(["nmcli", "device", "wifi", "connect", modelData.ssid])
                                                                             root.refreshWifi()   // re-scan so it flips to "Connected"
+                                                                            wifiSettle.restart() // …and refresh the Wi-Fi TILE (SSID)
                                                                         }
                                                                     }
                                                                 }
+
+                                                                HoverLift { }
                                                             }
                                                         }
                                                     }
@@ -1706,6 +1782,8 @@ Pill {
                                                 cursorShape: Qt.PointingHandCursor
                                                 onClicked: root.hubPage = "main"
                                             }
+
+                                            HoverLift { }
                                         }
 
                                         Text {
@@ -1729,6 +1807,8 @@ Pill {
                                                 cursorShape: Qt.PointingHandCursor
                                                 onClicked: root.refreshBt()
                                             }
+
+                                            HoverLift { }
                                         }
                                     }
 
@@ -1838,8 +1918,11 @@ Pill {
                                                                         Quickshell.execDetached(["bluetoothctl", "pair", modelData.mac])
                                                                         Quickshell.execDetached(["bluetoothctl", "connect", modelData.mac])
                                                                         root.refreshBt()
+                                                                        btSettle.restart()   // refresh the BT TILE (connected device name)
                                                                     }
                                                                 }
+
+                                                                HoverLift { }
                                                             }
                                                         }
                                                     }
@@ -1885,6 +1968,8 @@ Pill {
                                                 cursorShape: Qt.PointingHandCursor
                                                 onClicked: root.refreshWallpapers()
                                             }
+
+                                            HoverLift { }
                                         }
 
                                         // Theme settings — opens the manage view for currently active wallpaper
@@ -1907,6 +1992,8 @@ Pill {
                                                     root.themePage = "manage"
                                                 }
                                             }
+
+                                            HoverLift { }
                                         }
                                     }
 
@@ -1989,6 +2076,8 @@ Pill {
                                                 cursorShape: Qt.PointingHandCursor
                                                 onClicked: root.selectPrevWallpaper()
                                             }
+
+                                            HoverLift { baseScale: 0.88 }
                                         }
 
                                         // Right peeking wallpaper card (next)
@@ -2024,6 +2113,8 @@ Pill {
                                                 cursorShape: Qt.PointingHandCursor
                                                 onClicked: root.selectNextWallpaper()
                                             }
+
+                                            HoverLift { baseScale: 0.88 }
                                         }
 
                                         // Center card (currently active wallpaper)
@@ -2147,6 +2238,8 @@ Pill {
                                                 cursorShape: Qt.PointingHandCursor
                                                 onClicked: root.selectPrevWallpaper()
                                             }
+
+                                            HoverLift { }
                                         }
 
                                         // Right arrow button
@@ -2178,6 +2271,8 @@ Pill {
                                                 cursorShape: Qt.PointingHandCursor
                                                 onClicked: root.selectNextWallpaper()
                                             }
+
+                                            HoverLift { }
                                         }
                                     }
 
@@ -2222,6 +2317,8 @@ Pill {
                                                         root.themePage = "picker"
                                                     }
                                                 }
+
+                                                HoverLift { }
                                             }
 
                                             Rectangle {
@@ -2322,6 +2419,8 @@ Pill {
                                                         }
                                                     }
                                                 }
+
+                                                HoverLift { }
                                             }
                                         }
 
@@ -2571,6 +2670,8 @@ Pill {
                                                         cursorShape: hexInput.valid ? Qt.PointingHandCursor : Qt.ArrowCursor
                                                         onClicked: hexInput.applyHex()
                                                     }
+
+                                                    HoverLift { }
                                                 }
                                             }
                                         }
@@ -2795,6 +2896,8 @@ Pill {
                                                 cursorShape: Qt.PointingHandCursor
                                                 onClicked: NotificationState.soundEnabled = !NotificationState.soundEnabled
                                             }
+
+                                            HoverLift { }
                                         }
 
                                         // Quick test simulation button
@@ -2832,6 +2935,8 @@ Pill {
                                                     NotificationState.sendTestNotification("kitty", "Command finished", "Build completed with 0 errors in 1.4s")
                                                 }
                                             }
+
+                                            HoverLift { }
                                         }
 
                                         // Clear all button
@@ -2868,6 +2973,8 @@ Pill {
                                                 cursorShape: Qt.PointingHandCursor
                                                 onClicked: NotificationState.clearAll()
                                             }
+
+                                            HoverLift { }
                                         }
                                     }
 
@@ -3022,6 +3129,8 @@ Pill {
                                                             cursorShape: Qt.PointingHandCursor
                                                             onClicked: NotificationState.toggleGroupExpanded(groupCard.group.appName)
                                                         }
+
+                                                        HoverLift { }
                                                     }
 
                                                     // Dismiss this application's notifications
@@ -3044,6 +3153,8 @@ Pill {
                                                             cursorShape: Qt.PointingHandCursor
                                                             onClicked: NotificationState.clearGroup(groupCard.group.appName)
                                                         }
+
+                                                        HoverLift { }
                                                     }
                                                 }
 
