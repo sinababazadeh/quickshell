@@ -180,7 +180,8 @@ Item {
                 summary: summary,
                 body: body,
                 time: timeStr,
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                rawNotification: notification
             })
         }
     }
@@ -372,6 +373,51 @@ Item {
         let sum = 0
         for (let i = 0; i < filtered.length; i++) {
             sum += (filtered[i].count || 1)
+        }
+        root.totalCount = sum
+    }
+
+    // ─── Dismiss a Specific Notification (or by app) ───────────────────────────
+    function dismissNotification(notif) {
+        if (!notif) return
+        if (notif.rawNotification && typeof notif.rawNotification.dismiss === "function") {
+            try { notif.rawNotification.dismiss() } catch (e) {}
+        }
+        let appKey = (notif.appName || "").toLowerCase().trim()
+        let notifId = notif.id || notif.timestamp || null
+        let list = (root.groups || []).slice()
+
+        for (let i = 0; i < list.length; i++) {
+            if (list[i].appName.toLowerCase() === appKey) {
+                let g = list[i]
+                let items = (g.items || []).filter(item => {
+                    if (notifId && (item.id === notifId || item.timestamp === notifId)) return false
+                    return true
+                })
+
+                if (items.length === 0 || !notifId) {
+                    list.splice(i, 1)
+                } else {
+                    list[i] = {
+                        appName: g.appName,
+                        appIcon: g.appIcon,
+                        count: items.length,
+                        latestSummary: items[0].summary || "",
+                        latestBody: items[0].body || "",
+                        latestTime: items[0].time || "",
+                        items: items,
+                        expanded: g.expanded
+                    }
+                }
+                break
+            }
+        }
+
+        root.groups = list
+
+        let sum = 0
+        for (let i = 0; i < list.length; i++) {
+            sum += (list[i].count || 1)
         }
         root.totalCount = sum
     }

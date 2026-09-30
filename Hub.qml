@@ -126,10 +126,11 @@ Pill {
     property bool bannerActive: false
     property string bannerIcon: "notifications"
     property string bannerText: ""
+    property var currentBannerNotif: null
 
     Timer {
         id: bannerTimer
-        interval: 4500   // banner stays open for 4.5 seconds
+        interval: 6500   // banner stays open for 6.5 seconds (within 5-7s)
         repeat: false
         onTriggered: {
             root.bannerActive = false
@@ -143,14 +144,22 @@ Pill {
             // When a notification arrives:
             // If the Hub window is NOT open, morph the bar pill into a Dynamic Island banner
             if (!popup.visible) {
+                root.currentBannerNotif = notif
                 root.bannerIcon = NotificationState.resolveIcon(notif.appName, notif.appIcon)
                 let prefix = notif.appName ? (notif.appName + ": ") : ""
-                let bodyStr = notif.summary || notif.body || "New alert"
                 let group = NotificationState.getGroup(notif.appName)
                 if (group && group.count > 1) {
                     prefix = notif.appName + " (" + group.count + "): "
                 }
-                root.bannerText = prefix + bodyStr
+                let title = (notif.summary || "").trim()
+                let body = (notif.body || "").trim()
+                let fullContent = ""
+                if (title && body && title !== body) {
+                    fullContent = title + " — " + body
+                } else {
+                    fullContent = title || body || "New alert"
+                }
+                root.bannerText = prefix + fullContent
                 root.bannerActive = true
                 bannerTimer.restart()
             }
@@ -768,7 +777,7 @@ Pill {
 
     textColor: root.bannerActive ? Theme.attention : Theme.ink
 
-    maxLabelWidth: root.bannerActive ? 220 : 150
+    maxLabelWidth: root.bannerActive ? 520 : 150
 
     iconTransformOrigin: (!root.open && root.hasPendingNotifs) ? Item.Top : Item.Center
 
@@ -1082,9 +1091,14 @@ Pill {
             }
 
             if (root.bannerActive) {
-                root.bannerActive = false
+                if (root.currentBannerNotif) {
+                    NotificationState.dismissNotification(root.currentBannerNotif)
+                    root.currentBannerNotif = null
+                }
                 bannerTimer.stop()
-                root.openTab("notifications")
+                root.bannerActive = false
+                root.collapse()
+                return
             } else if (!root.open && root.hasPendingNotifs) {
                 // Priority #1: Click on ringing bell opens notifications tab in hub!
                 root.openTab("notifications")
