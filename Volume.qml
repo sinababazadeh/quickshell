@@ -51,32 +51,17 @@ Pill {
     // --- Volume stepping with 5-to-5 rounding logic -------------------------------
     function stepVolume(direction) {
         if (!root.audio) return
-        let currentPct = Math.round(root.audio.volume * 100)
-        let nextPct = currentPct
-
-        if (direction > 0) {
-            // Round / step up to the next multiple of 5 (e.g. 99 -> 100, 95 -> 100, 91 -> 95)
-            let snapped = Math.round(currentPct / 5) * 5
-            if (snapped > currentPct) {
-                nextPct = snapped
-            } else {
-                nextPct = snapped + 5
-            }
-        } else if (direction < 0) {
-            // Round / step down to the previous multiple of 5 (e.g. 91 -> 90, 100 -> 95, 99 -> 95)
-            let snapped = Math.round(currentPct / 5) * 5
-            if (snapped < currentPct) {
-                nextPct = snapped
-            } else {
-                nextPct = snapped - 5
-            }
-        }
+        let currentPct = root.volumePercent
+        // Shift by 5 in direction, then round to the closest number divided by 5:
+        // e.g. 49 + 5 = 54 -> 55; 91 - 5 = 86 -> 85; 41 - 5 = 36 -> 35; 95 + 5 = 100
+        let rawNext = (direction > 0) ? (currentPct + 5) : (currentPct - 5)
+        let nextPct = Math.round(rawNext / 5.0) * 5
 
         // Clamp to whole range 0 - 100%
         nextPct = Math.max(0, Math.min(100, nextPct))
 
         // Set floating volume without precision drift (e.g. 0.95, 1.0, 0.90)
-        root.audio.volume = Number((nextPct / 100).toFixed(2))
+        root.audio.volume = Number((nextPct / 100.0).toFixed(2))
 
         // Unmute automatically when raising volume
         if (direction > 0 && root.muted) {
@@ -234,7 +219,7 @@ Pill {
                             Text {
                                 text: "Inputs, outputs, configuration & playback"
                                 font.family: Theme.fontText
-                                font.pixelSize: 8.5
+                                font.pixelSize: 9
                                 color: Theme.qsTextMuted
                                 elide: Text.ElideRight
                                 Layout.fillWidth: true
@@ -299,7 +284,7 @@ Pill {
                             Text {
                                 text: "Audio effects, equalizer & filters"
                                 font.family: Theme.fontText
-                                font.pixelSize: 8.5
+                                font.pixelSize: 9
                                 color: Theme.qsTextMuted
                                 elide: Text.ElideRight
                                 Layout.fillWidth: true
