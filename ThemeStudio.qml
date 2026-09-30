@@ -374,7 +374,7 @@ PanelWindow {
             }
         }
 
-        // ── Right Island: Volume / Dictation / Tune ──
+        // ── Right Island: Volume ──
         RowLayout {
             anchors.right: parent.right
             anchors.rightMargin: 12
@@ -407,24 +407,6 @@ PanelWindow {
                     bottomRightRadius: height / 2
                     Text { anchors.centerIn: parent; text: "85%"; font.family: Theme.fontText; font.pixelSize: 12; font.bold: true; color: Theme.ink }
                 }
-            }
-
-            // Dictation Pill
-            Rectangle {
-                implicitHeight: Theme.pillHeight
-                implicitWidth: 38
-                radius: height / 2
-                color: Theme.plum
-                Text { anchors.centerIn: parent; text: "mic"; font.family: Theme.fontIcons; font.pixelSize: 16; color: Theme.ink }
-            }
-
-            // Tune Pill
-            Rectangle {
-                implicitHeight: Theme.pillHeight
-                implicitWidth: 38
-                radius: height / 2
-                color: Theme.plum
-                Text { anchors.centerIn: parent; text: "tune"; font.family: Theme.fontIcons; font.pixelSize: 16; color: Theme.ink }
             }
         }
     }

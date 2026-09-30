@@ -101,16 +101,9 @@ ShellRoot {
                 }
                 spacing: 8
 
-                // Volume control pill (click = mute, wheel = level).
-                Volume {}
-                // Dictation / speech-to-text toggle.
-                Dictation {}
-
-                // Quick-Settings dropdown toggle button (toggles Hub to Settings tab)
-                Pill {
-                    icon: "tune"
-                    label: ""
-                    onClicked: hub.toggleTab("settings")
+                // Volume control pill (click = mute, wheel = level, right-click = audio tools menu).
+                Volume {
+                    screen: modelData
                 }
             }
         }
