@@ -1994,7 +1994,7 @@ Pill {
                                                 anchors.fill: parent
                                                 cursorShape: Qt.PointingHandCursor
                                                 onClicked: {
-                                                    let target = root.editingPath || WallpaperState.current || (root.wallpapers.length > 0 ? root.wallpapers[0] : "")
+                                                    let target = (root.themePage === "manage" && root.editingPath) ? root.editingPath : (WallpaperState.current || (root.wallpapers.length > 0 ? root.wallpapers[0] : ""))
                                                     root.collapse()
                                                     ThemeStudioState.open(target)
                                                 }

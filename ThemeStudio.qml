@@ -11,6 +11,7 @@
 // =============================================================================
 import Quickshell
 import Quickshell.Wayland
+import Quickshell.Io
 import QtQuick
 import QtQuick.Layouts
 
@@ -27,6 +28,12 @@ PanelWindow {
     visible: ThemeStudioState.active
     color: "black"
 
+    onVisibleChanged: {
+        if (visible) {
+            sampleCanvas.requestPaint()
+        }
+    }
+
     // Crosshair target coordinates on the screen
     property real crosshairX: root.width * 0.35
     property real crosshairY: root.height * 0.45
@@ -38,8 +45,8 @@ PanelWindow {
         anchors.fill: parent
         source: ThemeStudioState.wallpaperPath || WallpaperState.current
         fillMode: Image.PreserveAspectCrop
-        asynchronous: true
-        cache: true
+        asynchronous: false
+        cache: false
         onStatusChanged: {
             if (status === Image.Ready) {
                 sampleCanvas.requestPaint()
@@ -52,17 +59,20 @@ PanelWindow {
         }
     }
 
-    // Hidden canvas used to sample pixel RGB data at screen coordinates
+    // Active offscreen canvas used to sample pixel RGB data at screen coordinates
     Canvas {
         id: sampleCanvas
         width: 320
         height: 180
-        visible: false
+        visible: true
+        opacity: 0.001
+        z: -100
         property var ctx: null
 
         onPaint: {
             ctx = getContext("2d")
             if (bgWallpaper.status === Image.Ready) {
+                ctx.clearRect(0, 0, width, height)
                 ctx.drawImage(bgWallpaper, 0, 0, width, height)
             }
         }
@@ -89,22 +99,13 @@ PanelWindow {
             }
         }
 
-        // Mathematical fallback if canvas pixel read is unavailable
-        if (!sampledHex) {
-            let u = root.crosshairX / root.width
-            let v = root.crosshairY / root.height
-            let hue = (u * 0.85 + v * 0.15) % 1.0
-            let sat = 0.55 + 0.35 * Math.sin(u * Math.PI)
-            let val = 0.30 + 0.65 * (1.0 - v)
-            let c = Qt.hsva(hue, sat, val, 1.0)
-            sampledHex = c.toString().toUpperCase()
+        if (sampledHex) {
+            root.currentSampledColor = sampledHex
+            ThemeStudioState.setSlotColor(ThemeStudioState.activeSlot, sampledHex)
         }
-
-        root.currentSampledColor = sampledHex
-        ThemeStudioState.setSlotColor(ThemeStudioState.activeSlot, sampledHex)
     }
 
-    // Helper color math for automated extraction
+    // Helper color math
     function rgbToHsv(r, g, b) {
         r /= 255; g /= 255; b /= 255;
         let max = Math.max(r, g, b), min = Math.min(r, g, b);
@@ -132,73 +133,122 @@ PanelWindow {
         return c.toString().toUpperCase();
     }
 
-    // Automated color extraction with algorithmic tuning mapped to actual UI objects
+    function rgbToHex(r, g, b) {
+        let ir = Math.max(0, Math.min(255, Math.round(r)))
+        let ig = Math.max(0, Math.min(255, Math.round(g)))
+        let ib = Math.max(0, Math.min(255, Math.round(b)))
+        return "#" + ((1 << 24) + (ir << 16) + (ig << 8) + ib).toString(16).slice(1).toUpperCase()
+    }
+
+    // Native color extraction process reading directly from the image on disk
+    Process {
+        id: autoExtractor
+        property string pendingMode: "balanced"
+        command: []
+        stdout: StdioCollector {
+            id: extractorOut
+            waitForEnd: true
+            onDataChanged: {
+                let txt = extractorOut.text.trim()
+                if (txt.startsWith("{") && txt.endsWith("}")) {
+                    try {
+                        let pal = JSON.parse(txt)
+                        if (pal && pal.plum && pal.primary && pal.violet) {
+                            ThemeStudioState.applyFullPalette(pal)
+                            return
+                        }
+                    } catch (e) {}
+                }
+                root.fallbackCanvasExtract(autoExtractor.pendingMode)
+            }
+        }
+    }
+
+    // Automated color extraction mapped to actual UI objects
     function autoExtractPalette(mode) {
         mode = mode || "balanced";
-        let samples = [];
+        let rawWp = (ThemeStudioState.wallpaperPath || WallpaperState.current || "").toString()
+        if (rawWp.startsWith("file://")) {
+            rawWp = rawWp.substring(7)
+        }
+
+        if (rawWp !== "") {
+            autoExtractor.pendingMode = mode
+            autoExtractor.command = [
+                "bash", "-c",
+                "for p in \"$HOME/.config/quickshell/extract-palette.py\" \"/app/applet/quickshell/extract-palette.py\" \"$(pwd)/extract-palette.py\"; do " +
+                "  if [ -f \"$p\" ]; then python3 \"$p\" \"" + rawWp + "\" \"" + mode + "\" && exit 0; fi; " +
+                "done; exit 1"
+            ]
+            autoExtractor.running = true
+        } else {
+            root.fallbackCanvasExtract(mode)
+        }
+    }
+
+    // Pure in-memory fallback extract honoring true wallpaper colors (no artificial mud browns/oranges)
+    function fallbackCanvasExtract(mode) {
+        mode = mode || "balanced"
+        let samples = []
         if (sampleCanvas.ctx && bgWallpaper.status === Image.Ready) {
-            let cw = sampleCanvas.width;
-            let ch = sampleCanvas.height;
+            let cw = sampleCanvas.width
+            let ch = sampleCanvas.height
             for (let gy = 1; gy <= 6; gy++) {
                 for (let gx = 1; gx <= 6; gx++) {
-                    let px = Math.round((gx / 7) * cw);
-                    let py = Math.round((gy / 7) * ch);
+                    let px = Math.round((gx / 7) * cw)
+                    let py = Math.round((gy / 7) * ch)
                     try {
-                        let d = sampleCanvas.ctx.getImageData(px, py, 1, 1).data;
-                        let hsv = rgbToHsv(d[0], d[1], d[2]);
-                        samples.push({ r: d[0], g: d[1], b: d[2], h: hsv.h, s: hsv.s, v: hsv.v });
+                        let d = sampleCanvas.ctx.getImageData(px, py, 1, 1).data
+                        let hsv = rgbToHsv(d[0], d[1], d[2])
+                        samples.push({ r: d[0], g: d[1], b: d[2], h: hsv.h, s: hsv.s, v: hsv.v })
                     } catch (e) {}
                 }
             }
         }
 
-        if (samples.length === 0) {
-            samples = [
-                { r: 24, g: 15, b: 60, h: 0.70, s: 0.75, v: 0.24 },
-                { r: 242, g: 114, b: 137, h: 0.97, s: 0.53, v: 0.95 },
-                { r: 47, g: 30, b: 160, h: 0.69, s: 0.81, v: 0.63 },
-                { r: 30, g: 13, b: 140, h: 0.69, s: 0.91, v: 0.55 }
-            ];
-        }
+        if (samples.length === 0) return
 
-        let satSorted = samples.slice().sort((a, b) => b.s - a.s);
-        let valSorted = samples.slice().sort((a, b) => b.v - a.v);
+        let byVal = samples.slice().sort((a, b) => a.v - b.v)
+        let bySat = samples.slice().sort((a, b) => b.s - a.s)
+        let darkest = byVal[0]
+        let brightest = byVal[byVal.length - 1]
+        let nonDark = samples.filter(s => s.v >= 0.25)
+        if (nonDark.length === 0) nonDark = samples
+        let accent = nonDark[Math.floor(nonDark.length / 2)]
+        let vibrant = bySat[0]
 
-        let mostVibrant = satSorted[0];
-        let satOnly = samples.filter(s => s.s > 0.25);
-        let dominantHue = satOnly.length > 0 ? satOnly[0].h : mostVibrant.h;
+        let baseV = Math.min(0.12, Math.max(0.06, darkest.v))
+        let violet = hsvToHex(darkest.h, Math.min(0.5, darkest.s), baseV)
+        let primary = hsvToHex(darkest.h, Math.min(0.4, darkest.s), baseV + 0.10)
+        let bgPip = hsvToHex(darkest.h, Math.min(0.3, darkest.s), baseV + 0.05)
 
-        let pal = {};
+        let plum = ""
+        let attention = ""
         if (mode === "vibrant") {
-            pal["plum"]      = hsvToHex(dominantHue + 0.05, 0.82, 0.58); // Pill Icon Segment
-            pal["primary"]   = hsvToHex(dominantHue, 0.75, 0.28);        // Pill Body / Capsule
-            pal["violet"]    = hsvToHex(dominantHue, 0.68, 0.15);        // Menu Card Background
-            pal["attention"] = hsvToHex(mostVibrant.h, 0.92, 0.98);      // Active Workspace & Accent
-            pal["indigo"]    = hsvToHex(dominantHue + 0.10, 0.75, 0.45); // Occupied Workspace
-            pal["bg"]        = hsvToHex(dominantHue, 0.60, 0.10);        // Empty Workspace
-            pal["ink"]       = "#FFFFFF";                                // Text & Icons
-            pal["lavender"]  = hsvToHex(dominantHue + 0.05, 0.35, 0.92); // Muted Text
+            plum = rgbToHex(vibrant.r, vibrant.g, vibrant.b)
+            attention = hsvToHex(vibrant.h, Math.min(1.0, vibrant.s + 0.15), Math.max(0.85, vibrant.v))
         } else if (mode === "deep") {
-            pal["plum"]      = hsvToHex(dominantHue + 0.08, 0.88, 0.42); // Pill Icon Segment
-            pal["primary"]   = hsvToHex(dominantHue, 0.70, 0.18);        // Pill Body / Capsule
-            pal["violet"]    = hsvToHex(dominantHue, 0.80, 0.09);        // Menu Card Background
-            pal["attention"] = hsvToHex(mostVibrant.h, 0.95, 0.95);      // Active Workspace & Accent
-            pal["indigo"]    = hsvToHex(dominantHue + 0.05, 0.70, 0.35); // Occupied Workspace
-            pal["bg"]        = hsvToHex(dominantHue, 0.70, 0.06);        // Empty Workspace
-            pal["ink"]       = "#F0F0FF";                                // Text & Icons
-            pal["lavender"]  = hsvToHex(dominantHue, 0.30, 0.80);        // Muted Text
-        } else { // "balanced"
-            pal["plum"]      = hsvToHex(dominantHue + 0.04, 0.75, 0.55); // Pill Icon Segment
-            pal["primary"]   = hsvToHex(dominantHue, 0.70, 0.24);        // Pill Body / Capsule
-            pal["violet"]    = hsvToHex(dominantHue, 0.65, 0.13);        // Menu Card Background
-            pal["attention"] = hsvToHex(mostVibrant.h, 0.85, 0.94);      // Active Workspace & Accent
-            pal["indigo"]    = hsvToHex(dominantHue + 0.08, 0.70, 0.48); // Occupied Workspace
-            pal["bg"]        = hsvToHex(dominantHue, 0.55, 0.10);        // Empty Workspace
-            pal["ink"]       = "#F5F5FA";                                // Text & Icons
-            pal["lavender"]  = hsvToHex(dominantHue + 0.03, 0.30, 0.88); // Muted Text
+            plum = hsvToHex(accent.h, accent.s * 0.8, Math.min(0.65, accent.v))
+            attention = rgbToHex(accent.r, accent.g, accent.b)
+        } else {
+            plum = rgbToHex(accent.r, accent.g, accent.b)
+            attention = brightest.v > 0.6 ? rgbToHex(brightest.r, brightest.g, brightest.b) : hsvToHex(accent.h, Math.max(0.2, accent.s * 0.7), 0.95)
         }
 
-        ThemeStudioState.applyFullPalette(pal);
+        let indigo = hsvToHex(accent.h, Math.min(0.5, accent.s), 0.45)
+        let lavender = hsvToHex(accent.h, Math.min(0.25, accent.s * 0.5), 0.82)
+        let ink = "#FFFFFF"
+
+        ThemeStudioState.applyFullPalette({
+            plum: plum,
+            primary: primary,
+            violet: violet,
+            attention: attention,
+            indigo: indigo,
+            bg: bgPip,
+            ink: ink,
+            lavender: lavender
+        })
     }
 
     Connections {
