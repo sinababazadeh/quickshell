@@ -63,9 +63,13 @@ Item {
             "python3 -c 'import json; print(json.dumps({\"workspaces\": [], \"monitors\": []}))'"
         ]
         stdout: StdioCollector {
-            onTextFinished: {
+            id: fetchCollector
+            waitForEnd: true
+            onDataChanged: {
+                let txt = fetchCollector.text ? fetchCollector.text.trim() : ""
+                if (!txt) return
                 try {
-                    let data = JSON.parse(text.trim())
+                    let data = JSON.parse(txt)
                     let wsList = data.workspaces || []
                     if (wsList.length > 0) {
                         root.workspaces = wsList
