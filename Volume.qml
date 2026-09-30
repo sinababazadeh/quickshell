@@ -71,7 +71,9 @@ Pill {
 
     // --- Mouse interaction --------------------------------------------------------
     MouseArea {
+        id: volMouseArea
         anchors.fill: parent
+        z: 10
         cursorShape: Qt.PointingHandCursor
         acceptedButtons: Qt.LeftButton | Qt.RightButton
 
@@ -79,7 +81,7 @@ Pill {
         onClicked: mouse => {
             if (mouse.button === Qt.RightButton) {
                 contextMenu.visible = !contextMenu.visible
-            } else {
+            } else if (mouse.button === Qt.LeftButton) {
                 if (root.audio) {
                     root.audio.muted = !root.audio.muted
                 }
@@ -101,6 +103,7 @@ Pill {
 
         WlrLayershell.layer: WlrLayer.Overlay
         WlrLayershell.exclusionMode: ExclusionMode.Ignore
+        WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
 
         anchors {
             top: true
@@ -113,17 +116,41 @@ Pill {
 
         implicitWidth: 260
         implicitHeight: menuCard.implicitHeight
+        width: implicitWidth
+        height: implicitHeight
 
         // Dismiss when clicking outside on Hyprland
         HyprlandFocusGrab {
+            id: menuGrab
             windows: [contextMenu]
-            active: contextMenu.visible
+            active: false
             onCleared: contextMenu.visible = false
+        }
+
+        Timer {
+            id: grabTimer
+            interval: 60
+            repeat: false
+            onTriggered: {
+                if (contextMenu.visible) {
+                    menuGrab.active = true
+                }
+            }
+        }
+
+        onVisibleChanged: {
+            if (visible) {
+                grabTimer.restart()
+            } else {
+                grabTimer.stop()
+                menuGrab.active = false
+            }
         }
 
         Rectangle {
             id: menuCard
             anchors.fill: parent
+            implicitHeight: menuCol.implicitHeight + 16
             radius: 12
             color: Theme.qsBg !== "transparent" ? Theme.qsBg : Qt.rgba(0.08, 0.06, 0.18, 0.96)
             border.width: 1
