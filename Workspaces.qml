@@ -29,16 +29,13 @@ Rectangle {
     radius: height / 2
     color: "transparent"
 
-    // Helper: switch to workspace using Hyprland Lua syntax + standard fallbacks
+    // Helper: switch to workspace cleanly via hyprctl CLI + safe Lua fallback
     function switchToWorkspace(ws) {
         let wsStr = ws.toString()
-        // 1. Hyprland Lua dispatcher syntax (v0.55+):
-        Hyprland.dispatch("hl.dsp.focus({ workspace = '" + wsStr + "' })")
-        // 2. Standard single-string dispatcher format ("workspace <id>"):
-        Hyprland.dispatch("workspace " + wsStr)
-        // 3. Direct hyprctl CLI IPC to guarantee execution:
         Quickshell.execDetached(["hyprctl", "dispatch", "workspace", wsStr])
-        Quickshell.execDetached(["hyprctl", "dispatch", "hl.dsp.focus({ workspace = '" + wsStr + "' })"])
+        try {
+            Hyprland.dispatch("hl.dispatch('workspace', '" + wsStr + "')")
+        } catch (e) {}
     }
 
     // --- LEFT ZONE: overview trigger icon (the grid_view button) -----------------

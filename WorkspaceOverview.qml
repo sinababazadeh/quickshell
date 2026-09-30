@@ -24,7 +24,7 @@ PanelWindow {
 
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.exclusionMode: ExclusionMode.Ignore
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
     anchors { top: true; bottom: true; left: true; right: true }
     visible: WorkspaceOverviewState.active
     color: "transparent"

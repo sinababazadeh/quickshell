@@ -52,7 +52,16 @@ Item {
     // ─── Fetch Detailed Workspaces + Windows from Hyprland ───────────────────────
     Process {
         id: fetchProc
-        command: ["python3", Quickshell.configDir + "/get-workspaces.py"]
+        command: [
+            "bash", "-c",
+            "for p in \"$HOME/.config/quickshell/get-workspaces.py\" \"/app/applet/quickshell/get-workspaces.py\" \"$(pwd)/get-workspaces.py\"; do " +
+            "  if [ -x \"$p\" ]; then " +
+            "    python3 \"$p\" 2>/dev/null; " +
+            "    exit 0; " +
+            "  fi; " +
+            "done; " +
+            "python3 -c 'import json; print(json.dumps({\"workspaces\": [], \"monitors\": []}))'"
+        ]
         stdout: StdioCollector {
             onTextFinished: {
                 try {
@@ -184,10 +193,10 @@ Item {
             Quickshell.execDetached(["hyprctl", "dispatch", "focusmonitor", monStr])
         }
 
-        // 2. Dispatch workspace switch via Hyprland Lua + hyprctl CLI
-        Hyprland.dispatch("workspace " + wsStr)
-        Hyprland.dispatch("hl.dsp.focus({ workspace = '" + wsStr + "' })")
+        // 2. Dispatch workspace switch via hyprctl CLI + safe Lua fallback
         Quickshell.execDetached(["hyprctl", "dispatch", "workspace", wsStr])
-        Quickshell.execDetached(["hyprctl", "dispatch", "hl.dsp.focus({ workspace = '" + wsStr + "' })"])
+        try {
+            Hyprland.dispatch("hl.dispatch('workspace', '" + wsStr + "')")
+        } catch (e) {}
     }
 }
