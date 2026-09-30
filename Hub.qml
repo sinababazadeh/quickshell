@@ -260,11 +260,17 @@ Pill {
         return spot || anyPlaying || null
     }
 
+    readonly property bool isSpotifyOpen: {
+        if (root.activeSpotifyPlayer !== null) return true
+        let st = (root.externalPlayerStatus || "").toLowerCase()
+        return st === "playing" || st === "paused" || st === "stopped"
+    }
+
     readonly property bool isMusicPlaying: {
         if (root.activeSpotifyPlayer) {
             return (root.activeSpotifyPlayer.isPlaying === true) || (root.activeSpotifyPlayer.playbackState === MprisPlaybackState.Playing)
         }
-        return root.externalPlayerStatus.toLowerCase() === "playing"
+        return (root.externalPlayerStatus || "").toLowerCase() === "playing"
     }
 
     readonly property string spotifyTrackTitle: {
@@ -281,35 +287,39 @@ Pill {
         return root.externalTrackArtist || ""
     }
 
-    property string externalPlayerStatus: "Stopped"
+    property string externalPlayerStatus: ""
     property string externalTrackTitle: ""
     property string externalTrackArtist: ""
     property bool mediaExtended: false
 
-    onIsMusicPlayingChanged: {
-        if (!isMusicPlaying) {
+    onIsSpotifyOpenChanged: {
+        if (!isSpotifyOpen) {
             mediaExtended = false
         }
     }
 
     Process {
         id: spotifyCliProc
-        command: ["bash", "-c", "STATUS=$(playerctl --player=spotify,%any metadata --format '{{status}}|||{{title}}|||{{artist}}' 2>/dev/null || echo ''); VOL=$(playerctl --player=spotify,%any volume 2>/dev/null || echo ''); echo \"$STATUS|||$VOL\""]
+        command: ["bash", "-c", "STATUS=$(playerctl --player=spotify,%any status 2>/dev/null || echo ''); META=$(playerctl --player=spotify,%any metadata --format '{{title}}|||{{artist}}' 2>/dev/null || echo '|||'); VOL=$(playerctl --player=spotify,%any volume 2>/dev/null || echo ''); echo \"$STATUS|||$META|||$VOL\""]
         stdout: SplitParser {
             onRead: data => {
                 let parts = data.trim().split("|||")
-                if (parts.length >= 2 && parts[0].trim() !== "") {
+                if (parts.length >= 1 && parts[0].trim() !== "") {
                     root.externalPlayerStatus = parts[0].trim()
-                    root.externalTrackTitle = parts[1].trim()
-                    root.externalTrackArtist = (parts.length >= 3 ? parts[2].trim() : "")
+                    if (parts.length >= 2 && parts[1].trim() !== "") {
+                        root.externalTrackTitle = parts[1].trim()
+                    }
+                    if (parts.length >= 3 && parts[2].trim() !== "") {
+                        root.externalTrackArtist = parts[2].trim()
+                    }
                     if (parts.length >= 4 && parts[3].trim() !== "") {
                         let parsedVol = parseFloat(parts[3].trim())
                         if (!isNaN(parsedVol) && parsedVol >= 0) {
                             root.externalSpotifyVolume = Math.max(0.0, Math.min(1.0, parsedVol))
                         }
                     }
-                } else if (data.trim() === "" || data.trim() === "|||") {
-                    root.externalPlayerStatus = "Stopped"
+                } else {
+                    root.externalPlayerStatus = ""
                 }
             }
         }
@@ -774,21 +784,24 @@ Pill {
     // ─── The idle face: a plain clock pill, ringing bell, music note, or active banner ──
     icon: root.bannerActive ? root.bannerIcon
         : (!root.open && root.hasPendingNotifs ? "notifications"
+        : (root.mediaExtended ? "music_note"
         : (!root.open && root.isMusicPlaying ? "music_note"
-        : "nest_clock_farsight_analog"))
+        : "nest_clock_farsight_analog")))
 
     label: root.bannerActive ? root.bannerText
          : Qt.formatDateTime(clock.date, "hh:mm AP")
 
     bgColor: root.bannerActive ? Theme.attention
            : (!root.open && root.hasPendingNotifs ? Theme.attention
+           : (root.mediaExtended ? "#1db954"
            : (!root.open && root.isMusicPlaying ? "#1db954"
-           : Theme.plum))
+           : Theme.plum)))
 
     iconColor: root.bannerActive ? Theme.qsOnAccent
              : (!root.open && root.hasPendingNotifs ? Theme.qsOnAccent
+             : (root.mediaExtended ? "#ffffff"
              : (!root.open && root.isMusicPlaying ? "#ffffff"
-             : Theme.ink))
+             : Theme.ink)))
 
     labelBg: root.open ? Theme.indigo : Theme.primary
 
@@ -798,7 +811,7 @@ Pill {
 
     iconTransformOrigin: (!root.open && root.hasPendingNotifs) ? Item.Top : Item.Center
 
-    customBody: (!root.open && root.isMusicPlaying && root.mediaExtended && !root.hasPendingNotifs && !root.bannerActive)
+    customBody: (!root.open && root.isSpotifyOpen && root.mediaExtended && !root.hasPendingNotifs && !root.bannerActive)
         ? mediaControlsBar
         : null
 
@@ -807,7 +820,7 @@ Pill {
         id: mediaControlsBar
         implicitHeight: Theme.pillHeight
         implicitWidth: mediaLayout.implicitWidth + 8
-        visible: (root.customBody === mediaControlsBar) && root.mediaExtended && root.isMusicPlaying && !root.open && !root.hasPendingNotifs && !root.bannerActive
+        visible: (root.customBody === mediaControlsBar) && root.mediaExtended && root.isSpotifyOpen && !root.open && !root.hasPendingNotifs && !root.bannerActive
 
         RowLayout {
             id: mediaLayout
@@ -1125,12 +1138,11 @@ Pill {
                 return
             }
 
-            // "when music is being played, only clicking on the left side of the pill,
-            // the icon side of the pill, should expand the pill to show the Spotify controls.
-            // And only clicking on the left side of the pill, the icon side of the pill,
-            // should collapse that menu back to the default look."
-            if (root.isMusicPlaying && !root.hasPendingNotifs) {
-                root.mediaExtended = !root.mediaExtended
+            // If Spotify controls are currently expanded (whether playing or paused):
+            // "when playback is paused, I can click on the notes icon when the pill is expanded,
+            // and that should revert it back to the default mode of the hub pill"
+            if (root.mediaExtended) {
+                root.mediaExtended = false
                 return
             }
 
@@ -1140,7 +1152,14 @@ Pill {
                 return
             }
 
-            // Default clock face: clicking icon opens/toggles the hub
+            // When Spotify is open (playing or paused):
+            // "when Spotify is open, clicking on the clock icon should open the Spotify controller."
+            if (root.isSpotifyOpen) {
+                root.mediaExtended = true
+                return
+            }
+
+            // Default clock face when Spotify is not open: clicking icon opens/toggles the hub
             root.toggle()
         }
     }
