@@ -39,6 +39,8 @@ import QtQuick.Layouts
 Pill {
     id: root
 
+    handleClicks: false
+
     // ─── Public surface ─────────────────────────────────────────────────────────
     property var screen: Quickshell.screens.length > 0 ? Quickshell.screens[0] : null
 
@@ -324,9 +326,14 @@ Pill {
     }
 
     function spotifyTogglePlay() {
+        let sent = false
         if (root.activeSpotifyPlayer && typeof root.activeSpotifyPlayer.togglePlaying === "function") {
-            root.activeSpotifyPlayer.togglePlaying()
-        } else {
+            try {
+                root.activeSpotifyPlayer.togglePlaying()
+                sent = true
+            } catch (e) {}
+        }
+        if (!sent) {
             Quickshell.execDetached(["playerctl", "--player=spotify,%any", "play-pause"])
         }
         spotifyPollTimer.restart()
@@ -334,9 +341,14 @@ Pill {
     }
 
     function spotifyNext() {
+        let sent = false
         if (root.activeSpotifyPlayer && typeof root.activeSpotifyPlayer.next === "function") {
-            root.activeSpotifyPlayer.next()
-        } else {
+            try {
+                root.activeSpotifyPlayer.next()
+                sent = true
+            } catch (e) {}
+        }
+        if (!sent) {
             Quickshell.execDetached(["playerctl", "--player=spotify,%any", "next"])
         }
         spotifyPollTimer.restart()
@@ -344,9 +356,14 @@ Pill {
     }
 
     function spotifyPrevious() {
+        let sent = false
         if (root.activeSpotifyPlayer && typeof root.activeSpotifyPlayer.previous === "function") {
-            root.activeSpotifyPlayer.previous()
-        } else {
+            try {
+                root.activeSpotifyPlayer.previous()
+                sent = true
+            } catch (e) {}
+        }
+        if (!sent) {
             Quickshell.execDetached(["playerctl", "--player=spotify,%any", "previous"])
         }
         spotifyPollTimer.restart()
@@ -790,6 +807,7 @@ Pill {
         id: mediaControlsBar
         implicitHeight: Theme.pillHeight
         implicitWidth: mediaLayout.implicitWidth + 8
+        visible: (root.customBody === mediaControlsBar) && root.mediaExtended && root.isMusicPlaying && !root.open && !root.hasPendingNotifs && !root.bannerActive
 
         RowLayout {
             id: mediaLayout
@@ -1078,18 +1096,24 @@ Pill {
         }
     }
 
-    // ─── Click = expand / collapse / notification / media ─────────────────────────
+    // ─── Left Side: Icon segment mouse area ──────────────────────────────────────
     MouseArea {
-        id: clickArea
-        anchors.fill: parent
+        id: pillLeftArea
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        width: Math.max(28, root.iconSegWidth)
         cursorShape: Qt.PointingHandCursor
         acceptedButtons: Qt.LeftButton | Qt.RightButton
+        z: 20
+
         onClicked: mouse => {
             if (mouse.button === Qt.RightButton) {
                 root.toggle()
                 return
             }
 
+            // Dismiss active notification banner
             if (root.bannerActive) {
                 if (root.currentBannerNotif) {
                     NotificationState.dismissNotification(root.currentBannerNotif)
@@ -1099,15 +1123,65 @@ Pill {
                 root.bannerActive = false
                 root.collapse()
                 return
-            } else if (!root.open && root.hasPendingNotifs) {
-                // Priority #1: Click on ringing bell opens notifications tab in hub!
-                root.openTab("notifications")
-            } else if (!root.open && root.isMusicPlaying) {
-                // Priority #2: Click on pulsing music note extends/retracts media controls!
-                root.mediaExtended = !root.mediaExtended
-            } else {
-                root.toggle()
             }
+
+            // "when music is being played, only clicking on the left side of the pill,
+            // the icon side of the pill, should expand the pill to show the Spotify controls.
+            // And only clicking on the left side of the pill, the icon side of the pill,
+            // should collapse that menu back to the default look."
+            if (root.isMusicPlaying && !root.hasPendingNotifs) {
+                root.mediaExtended = !root.mediaExtended
+                return
+            }
+
+            // If pending notifications exist: clicking bell opens notifications tab in hub
+            if (!root.open && root.hasPendingNotifs) {
+                root.openTab("notifications")
+                return
+            }
+
+            // Default clock face: clicking icon opens/toggles the hub
+            root.toggle()
+        }
+    }
+
+    // ─── Right Side: Label segment mouse area (clock numbers / default) ──────────
+    MouseArea {
+        id: pillRightArea
+        anchors.left: pillLeftArea.right
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        cursorShape: Qt.PointingHandCursor
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        // ONLY enabled when NOT in extended media mode!
+        // When media is extended, this is DISABLED completely so that media buttons,
+        // slider, and controls receive clicks without any interference!
+        enabled: !root.mediaExtended
+        z: 5
+
+        onClicked: mouse => {
+            if (mouse.button === Qt.RightButton) {
+                root.toggle()
+                return
+            }
+
+            // Dismiss active notification banner
+            if (root.bannerActive) {
+                if (root.currentBannerNotif) {
+                    NotificationState.dismissNotification(root.currentBannerNotif)
+                    root.currentBannerNotif = null
+                }
+                bannerTimer.stop()
+                root.bannerActive = false
+                root.collapse()
+                return
+            }
+
+            // "when it is in default, it is inside the pill is collapsed and showing the clock,
+            // clicking on the thing, the clock, I mean the clock numbers, the right side of the pill,
+            // when it is displaying the clock, clicking on it should open the hub, not the Spotify controller."
+            root.toggle()
         }
     }
 

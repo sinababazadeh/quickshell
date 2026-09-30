@@ -46,6 +46,7 @@ Rectangle {
 
     // Custom body item for the right segment (e.g. extended media player controls)
     property Item customBody: null
+    property bool handleClicks: true
 
     // --- Signals (the component's "events") -----------------------------------
     // Other files write `onClicked: ...` to run code when the pill is pressed.
@@ -176,7 +177,7 @@ Rectangle {
     MouseArea {
         anchors.fill: parent
         cursorShape: Qt.PointingHandCursor  // show a hand cursor on hover
-        enabled: root.customBody === null
+        enabled: root.handleClicks && (root.customBody === null)
         onClicked: root.clicked()
     }
 }
