@@ -283,15 +283,21 @@ Pill {
 
     Process {
         id: spotifyCliProc
-        command: ["bash", "-c", "playerctl --player=spotify,%any metadata --format '{{status}}|||{{title}}|||{{artist}}' 2>/dev/null || echo ''"]
+        command: ["bash", "-c", "STATUS=$(playerctl --player=spotify,%any metadata --format '{{status}}|||{{title}}|||{{artist}}' 2>/dev/null || echo ''); VOL=$(playerctl --player=spotify,%any volume 2>/dev/null || echo ''); echo \"$STATUS|||$VOL\""]
         stdout: SplitParser {
             onRead: data => {
                 let parts = data.trim().split("|||")
-                if (parts.length >= 2) {
+                if (parts.length >= 2 && parts[0].trim() !== "") {
                     root.externalPlayerStatus = parts[0].trim()
                     root.externalTrackTitle = parts[1].trim()
                     root.externalTrackArtist = (parts.length >= 3 ? parts[2].trim() : "")
-                } else if (data.trim() === "") {
+                    if (parts.length >= 4 && parts[3].trim() !== "") {
+                        let parsedVol = parseFloat(parts[3].trim())
+                        if (!isNaN(parsedVol) && parsedVol >= 0) {
+                            root.externalSpotifyVolume = Math.max(0.0, Math.min(1.0, parsedVol))
+                        }
+                    }
+                } else if (data.trim() === "" || data.trim() === "|||") {
                     root.externalPlayerStatus = "Stopped"
                 }
             }
@@ -336,6 +342,52 @@ Pill {
         }
         spotifyPollTimer.restart()
         if (!spotifyCliProc.running) spotifyCliProc.running = true
+    }
+
+    // ─── Spotify / Media Volume State & Controls ─────────────────────────────────
+    property real savedSpotifyVolume: 0.8
+    property real externalSpotifyVolume: 0.8
+
+    readonly property real spotifyVolume: {
+        if (root.activeSpotifyPlayer && typeof root.activeSpotifyPlayer.volume === "number" && root.activeSpotifyPlayer.volume >= 0) {
+            return Math.max(0.0, Math.min(1.0, root.activeSpotifyPlayer.volume))
+        }
+        return Math.max(0.0, Math.min(1.0, root.externalSpotifyVolume))
+    }
+
+    readonly property bool spotifyMuted: root.spotifyVolume <= 0.001
+    readonly property int spotifyVolumePct: Math.round(root.spotifyVolume * 100)
+
+    function setSpotifyVolume(val) {
+        let clamped = Math.max(0.0, Math.min(1.0, val))
+        clamped = Number(clamped.toFixed(2))
+        root.externalSpotifyVolume = clamped
+        if (clamped > 0.01) {
+            root.savedSpotifyVolume = clamped
+        }
+        if (root.activeSpotifyPlayer) {
+            try {
+                root.activeSpotifyPlayer.volume = clamped
+            } catch (e) {}
+        }
+        Quickshell.execDetached(["playerctl", "--player=spotify,%any", "volume", clamped.toString()])
+        if (!spotifyCliProc.running) spotifyCliProc.running = true
+    }
+
+    function toggleSpotifyMute() {
+        if (root.spotifyMuted) {
+            let target = (root.savedSpotifyVolume > 0.05) ? root.savedSpotifyVolume : 0.8
+            root.setSpotifyVolume(target)
+        } else {
+            root.savedSpotifyVolume = (root.spotifyVolume > 0.05) ? root.spotifyVolume : 0.8
+            root.setSpotifyVolume(0.0)
+        }
+    }
+
+    function stepSpotifyVolume(dir) {
+        let current = root.spotifyVolume
+        let next = Math.max(0.0, Math.min(1.0, current + (dir > 0 ? 0.05 : -0.05)))
+        root.setSpotifyVolume(next)
     }
 
     // ─── Device state (brightness / radios) ─────────────────────────────────────
@@ -854,10 +906,11 @@ Pill {
                 color: Theme.pillBorder !== "transparent" ? Theme.pillBorder : Qt.rgba(1, 1, 1, 0.15)
             }
 
-            // 3. Audio / Volume Controls (Click = mute, Wheel = volume step)
+            // 3. Spotify Audio / Volume Controls (controls Spotify volume, NOT global system volume)
             RowLayout {
-                spacing: 4
+                spacing: 5
 
+                // Volume / Mute button (Click = mute/unmute Spotify, Wheel = step Spotify volume)
                 Rectangle {
                     implicitWidth: 22
                     implicitHeight: 22
@@ -866,12 +919,12 @@ Pill {
 
                     Text {
                         anchors.centerIn: parent
-                        text: root.audioMuted ? "volume_off"
-                            : (root.audioVolumePct > 50 ? "volume_up"
-                            : (root.audioVolumePct > 0 ? "volume_down" : "volume_mute"))
+                        text: root.spotifyMuted ? "volume_off"
+                            : (root.spotifyVolumePct > 50 ? "volume_up"
+                            : (root.spotifyVolumePct > 0 ? "volume_down" : "volume_mute"))
                         font.family: Theme.fontIcons
                         font.pixelSize: 14
-                        color: root.audioMuted ? Theme.attention : Theme.ink
+                        color: root.spotifyMuted ? Theme.attention : Theme.ink
                     }
 
                     MouseArea {
@@ -879,19 +932,88 @@ Pill {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: root.toggleAudioMute()
+                        onClicked: root.toggleSpotifyMute()
                         onWheel: wheel => {
-                            root.stepAudioVolume(wheel.angleDelta.y > 0 ? 1 : -1)
+                            root.stepSpotifyVolume(wheel.angleDelta.y > 0 ? 1 : -1)
+                        }
+                    }
+                }
+
+                // Interactive Mini Volume Slider Bar for Spotify
+                Rectangle {
+                    id: miniVolTrack
+                    implicitWidth: 46
+                    implicitHeight: 6
+                    radius: 3
+                    color: Qt.rgba(1, 1, 1, 0.18)
+
+                    Rectangle {
+                        id: miniVolFill
+                        height: parent.height
+                        width: Math.max(0, Math.min(parent.width, parent.width * root.spotifyVolume))
+                        radius: 3
+                        color: root.spotifyMuted ? Theme.lavender : "#1db954"
+
+                        Behavior on width {
+                            enabled: !sliderDragArea.drag.active
+                            NumberAnimation { duration: 80 }
+                        }
+                    }
+
+                    // Thumb indicator
+                    Rectangle {
+                        anchors.verticalCenter: parent.verticalCenter
+                        x: Math.max(0, Math.min(parent.width - width, (parent.width * root.spotifyVolume) - (width / 2)))
+                        width: 10
+                        height: 10
+                        radius: 5
+                        color: "#ffffff"
+                        visible: sliderDragArea.containsMouse || sliderDragArea.drag.active
+
+                        Behavior on x {
+                            enabled: !sliderDragArea.drag.active
+                            NumberAnimation { duration: 80 }
+                        }
+                    }
+
+                    MouseArea {
+                        id: sliderDragArea
+                        anchors.fill: parent
+                        anchors.margins: -4
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+
+                        function updateVolFromMouse(mouseX) {
+                            let relX = Math.max(0, Math.min(miniVolTrack.width, mouseX - 4))
+                            let ratio = relX / miniVolTrack.width
+                            root.setSpotifyVolume(ratio)
+                        }
+
+                        onPressed: mouse => updateVolFromMouse(mouse.x)
+                        onPositionChanged: mouse => {
+                            if (pressed) updateVolFromMouse(mouse.x)
+                        }
+                        onWheel: wheel => {
+                            root.stepSpotifyVolume(wheel.angleDelta.y > 0 ? 1 : -1)
                         }
                     }
                 }
 
                 Text {
-                    text: root.audioMuted ? "Mute" : (root.audioVolumePct + "%")
+                    text: root.spotifyMuted ? "Mute" : (root.spotifyVolumePct + "%")
                     font.family: Theme.fontText
                     font.pixelSize: 10
                     font.bold: true
-                    color: Theme.lavender
+                    color: root.spotifyMuted ? Theme.attention : Theme.lavender
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.toggleSpotifyMute()
+                        onWheel: wheel => {
+                            root.stepSpotifyVolume(wheel.angleDelta.y > 0 ? 1 : -1)
+                        }
+                    }
                 }
             }
 
@@ -1965,6 +2087,18 @@ Pill {
                                         }
 
                                         Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.pillBorder }
+
+                                        // Spotify Application Volume Slider (when active)
+                                        CustomSlider {
+                                            visible: root.isMusicPlaying || (root.spotifyTrackTitle !== "" && root.spotifyTrackTitle !== "Spotify Music")
+                                            icon: root.spotifyMuted ? "volume_off" : "music_note"
+                                            value: root.spotifyVolume
+                                            maxValue: 1.0
+                                            displayText: root.spotifyMuted ? "Muted" : (root.spotifyVolumePct + "%")
+                                            onValueChangedByUser: newVal => {
+                                                root.setSpotifyVolume(newVal)
+                                            }
+                                        }
 
                                         // Volume — BOOST slider: goes up to 150%, no text percentage shown
                                         CustomSlider {
