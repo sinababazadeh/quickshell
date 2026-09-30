@@ -24,7 +24,7 @@ Pill {
     id: root
 
     // Monitor reference passed from the bar
-    property var screen: null
+    property var screen: Quickshell.screens.length > 0 ? Quickshell.screens[0] : null
 
     // Keep our references to the default sink alive & up to date.
     PwObjectTracker {
@@ -97,13 +97,12 @@ Pill {
     // --- Right-click Windows-style Audio Context Menu ---------------------------
     PanelWindow {
         id: contextMenu
-        screen: root.screen
+        screen: root.screen || (Quickshell.screens.length > 0 ? Quickshell.screens[0] : null)
         visible: false
         color: "transparent"
 
         WlrLayershell.layer: WlrLayer.Overlay
         WlrLayershell.exclusionMode: ExclusionMode.Ignore
-        WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
 
         anchors {
             top: true
@@ -114,10 +113,8 @@ Pill {
             right: 12
         }
 
-        implicitWidth: 260
-        implicitHeight: menuCard.implicitHeight
-        width: implicitWidth
-        height: implicitHeight
+        implicitWidth: 280
+        implicitHeight: 154
 
         // Dismiss when clicking outside on Hyprland
         HyprlandFocusGrab {
@@ -129,7 +126,7 @@ Pill {
 
         Timer {
             id: grabTimer
-            interval: 60
+            interval: 50
             repeat: false
             onTriggered: {
                 if (contextMenu.visible) {
@@ -150,7 +147,6 @@ Pill {
         Rectangle {
             id: menuCard
             anchors.fill: parent
-            implicitHeight: menuCol.implicitHeight + 16
             radius: 12
             color: Theme.qsBg !== "transparent" ? Theme.qsBg : Qt.rgba(0.08, 0.06, 0.18, 0.96)
             border.width: 1
@@ -177,6 +173,7 @@ Pill {
                 // Header
                 RowLayout {
                     Layout.fillWidth: true
+                    Layout.preferredHeight: 20
                     Layout.margins: 4
                     spacing: 6
 
@@ -197,15 +194,17 @@ Pill {
 
                 Rectangle {
                     Layout.fillWidth: true
+                    Layout.preferredHeight: 1
                     implicitHeight: 1
-                    color: Theme.pillBorder
+                    color: Qt.rgba(1, 1, 1, 0.12)
                 }
 
                 // 1. Pavucontrol (PulseAudio / Power Audio Volume Control)
                 Rectangle {
                     id: pavuBtn
                     Layout.fillWidth: true
-                    height: 44
+                    Layout.preferredHeight: 46
+                    implicitHeight: 46
                     radius: 8
                     color: pavuMouse.containsMouse ? Theme.primary : "transparent"
 
@@ -270,7 +269,8 @@ Pill {
                 Rectangle {
                     id: eeBtn
                     Layout.fillWidth: true
-                    height: 44
+                    Layout.preferredHeight: 46
+                    implicitHeight: 46
                     radius: 8
                     color: eeMouse.containsMouse ? Theme.primary : "transparent"
 
