@@ -54,3 +54,7 @@ QuickSettings  1.0 QuickSettings.qml
 singleton ThemeStudioState 1.0 ThemeStudioState.qml
 ThemeStudio        1.0 ThemeStudio.qml
 ColorPickerWidget  1.0 ColorPickerWidget.qml
+
+# --- Workspaces Overview (Exposé / Mission Control) ---------------------------
+singleton WorkspaceOverviewState 1.0 WorkspaceOverviewState.qml
+WorkspaceOverview        1.0 WorkspaceOverview.qml
