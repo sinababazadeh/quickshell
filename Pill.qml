@@ -39,18 +39,26 @@ Rectangle {
     property int maxLabelWidth: 400          // labels longer than this get ...
     property real contentOpacity: 1.0        // opacity of rendered segments (for seamless transitions)
 
+    // Transformations for icon animations (bell ringing, beat pulse)
+    property real iconRotation: 0.0
+    property real iconScale: 1.0
+    property int iconTransformOrigin: Item.Center
+
+    // Custom body item for the right segment (e.g. extended media player controls)
+    property Item customBody: null
+
     // --- Signals (the component's "events") -----------------------------------
     // Other files write `onClicked: ...` to run code when the pill is pressed.
     signal clicked()
 
     // --- Derived conveniences (readonly = computed, not settable) -------------
     readonly property bool hasIcon:  root.icon !== ""   // true → draw icon segment
-    readonly property bool hasLabel: root.label !== ""  // true → draw label segment
+    readonly property bool hasLabel: (root.label !== "") || (root.customBody !== null)  // true → draw label segment
     readonly property real iconSegWidth: iconSeg.width
     readonly property real textSegWidth: textSeg.width
 
     // --- The Rectangle's own geometry ------------------------------------------
-    implicitWidth: iconSeg.width + (root.hasLabel ? Math.min(root.maxLabelWidth, labelTxt.implicitWidth + 16) : 0)
+    implicitWidth: iconSeg.width + (root.customBody ? (root.customBody.implicitWidth + 16) : (root.hasLabel ? Math.min(root.maxLabelWidth, labelTxt.implicitWidth + 16) : 0))
     implicitHeight: Theme.pillHeight              // height comes from the theme
     radius: 0
     color: "transparent"  // the root itself paints nothing; children do
@@ -92,6 +100,9 @@ Rectangle {
             height: 16
             fillMode: Image.PreserveAspectFit
             asynchronous: true
+            rotation: root.iconRotation
+            scale: root.iconScale
+            transformOrigin: root.iconTransformOrigin
         }
 
         Text {
@@ -103,6 +114,9 @@ Rectangle {
             font.family: Theme.fontIcons  // the Material icon glyph font
             font.pixelSize: 17
             leftPadding: root.hasLabel ? 4 : 0  // nudge glyph away from the seam
+            rotation: root.iconRotation
+            scale: root.iconScale
+            transformOrigin: root.iconTransformOrigin
         }
     }
 
@@ -128,13 +142,30 @@ Rectangle {
         Text {
             id: labelTxt
             anchors.centerIn: parent
-            visible: root.hasLabel
+            visible: root.hasLabel && !root.customBody
             text: root.label
             color: root.textColor
             font.family: Theme.fontText
             font.pixelSize: 14
             elide: Text.ElideRight                 // "…" if too long
             width: Math.min(implicitWidth, Math.max(0, parent.width - 12))
+        }
+
+        Item {
+            id: customHost
+            anchors.centerIn: parent
+            width: root.customBody ? root.customBody.implicitWidth : 0
+            height: parent.height
+            visible: root.customBody !== null
+            z: 10
+        }
+    }
+
+    onCustomBodyChanged: {
+        if (customBody) {
+            customBody.parent = customHost
+            customBody.anchors.verticalCenter = customHost.verticalCenter
+            customBody.anchors.horizontalCenter = customHost.horizontalCenter
         }
     }
 
@@ -145,6 +176,7 @@ Rectangle {
     MouseArea {
         anchors.fill: parent
         cursorShape: Qt.PointingHandCursor  // show a hand cursor on hover
+        enabled: root.customBody === null
         onClicked: root.clicked()
     }
 }

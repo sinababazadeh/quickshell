@@ -31,6 +31,7 @@ import Quickshell
 import Quickshell.Wayland
 import Quickshell.Io
 import Quickshell.Services.Pipewire
+import Quickshell.Services.Mpris
 import Quickshell.Hyprland
 import QtQuick
 import QtQuick.Layouts
@@ -138,6 +139,7 @@ Pill {
     Connections {
         target: NotificationState
         function onNotificationReceived(notif) {
+            root.mediaExtended = false
             // When a notification arrives:
             // If the Hub window is NOT open, morph the bar pill into a Dynamic Island banner
             if (!popup.visible) {
@@ -207,6 +209,134 @@ Pill {
     }
     readonly property var sink: Pipewire.defaultAudioSink
     readonly property var source: Pipewire.defaultAudioSource
+
+    // ─── Live audio sink volume & mute helpers ──────────────────────────────────
+    readonly property var audio: sink ? sink.audio : null
+    readonly property real audioVolume: audio ? audio.volume : 0.0
+    readonly property bool audioMuted: audio ? audio.muted : false
+    readonly property int audioVolumePct: Math.round(audioVolume * 100)
+
+    function toggleAudioMute() {
+        if (root.audio) {
+            root.audio.muted = !root.audio.muted
+        }
+    }
+
+    function stepAudioVolume(dir) {
+        if (!root.audio) return
+        let next = Math.max(0.0, Math.min(1.0, root.audioVolume + (dir > 0 ? 0.05 : -0.05)))
+        root.audio.volume = Number(next.toFixed(2))
+        if (dir > 0 && root.audioMuted) root.audio.muted = false
+    }
+
+    // ─── MPRIS / Spotify Live State & Playback ───────────────────────────────────
+    readonly property var activeSpotifyPlayer: {
+        let players = (typeof Mpris !== "undefined" && Mpris.players && Mpris.players.values) ? Mpris.players.values : []
+        let spot = null
+        let anyPlaying = null
+        for (let i = 0; i < players.length; i++) {
+            let p = players[i]
+            if (!p) continue
+            let id = ((p.identity || "") + " " + (p.dbusName || "")).toLowerCase()
+            let playing = (p.isPlaying === true) || (p.playbackState === MprisPlaybackState.Playing)
+            if (id.includes("spotify")) {
+                if (playing) return p
+                if (!spot) spot = p
+            } else if (playing && !anyPlaying) {
+                anyPlaying = p
+            }
+        }
+        return spot || anyPlaying || null
+    }
+
+    readonly property bool isMusicPlaying: {
+        if (root.activeSpotifyPlayer) {
+            return (root.activeSpotifyPlayer.isPlaying === true) || (root.activeSpotifyPlayer.playbackState === MprisPlaybackState.Playing)
+        }
+        return root.externalPlayerStatus.toLowerCase() === "playing"
+    }
+
+    readonly property string spotifyTrackTitle: {
+        if (root.activeSpotifyPlayer && root.activeSpotifyPlayer.trackTitle) {
+            return root.activeSpotifyPlayer.trackTitle
+        }
+        return root.externalTrackTitle || "Spotify Music"
+    }
+
+    readonly property string spotifyTrackArtist: {
+        if (root.activeSpotifyPlayer && root.activeSpotifyPlayer.trackArtist) {
+            return root.activeSpotifyPlayer.trackArtist
+        }
+        return root.externalTrackArtist || ""
+    }
+
+    property string externalPlayerStatus: "Stopped"
+    property string externalTrackTitle: ""
+    property string externalTrackArtist: ""
+    property bool mediaExtended: false
+
+    onIsMusicPlayingChanged: {
+        if (!isMusicPlaying) {
+            mediaExtended = false
+        }
+    }
+
+    Process {
+        id: spotifyCliProc
+        command: ["bash", "-c", "playerctl --player=spotify,%any metadata --format '{{status}}|||{{title}}|||{{artist}}' 2>/dev/null || echo ''"]
+        stdout: SplitParser {
+            onRead: data => {
+                let parts = data.trim().split("|||")
+                if (parts.length >= 2) {
+                    root.externalPlayerStatus = parts[0].trim()
+                    root.externalTrackTitle = parts[1].trim()
+                    root.externalTrackArtist = (parts.length >= 3 ? parts[2].trim() : "")
+                } else if (data.trim() === "") {
+                    root.externalPlayerStatus = "Stopped"
+                }
+            }
+        }
+    }
+
+    Timer {
+        id: spotifyPollTimer
+        interval: 1500
+        running: true
+        repeat: true
+        onTriggered: {
+            if (!spotifyCliProc.running) spotifyCliProc.running = true
+        }
+    }
+
+    function spotifyTogglePlay() {
+        if (root.activeSpotifyPlayer && typeof root.activeSpotifyPlayer.togglePlaying === "function") {
+            root.activeSpotifyPlayer.togglePlaying()
+        } else {
+            Quickshell.execDetached(["playerctl", "--player=spotify,%any", "play-pause"])
+        }
+        spotifyPollTimer.restart()
+        if (!spotifyCliProc.running) spotifyCliProc.running = true
+    }
+
+    function spotifyNext() {
+        if (root.activeSpotifyPlayer && typeof root.activeSpotifyPlayer.next === "function") {
+            root.activeSpotifyPlayer.next()
+        } else {
+            Quickshell.execDetached(["playerctl", "--player=spotify,%any", "next"])
+        }
+        spotifyPollTimer.restart()
+        if (!spotifyCliProc.running) spotifyCliProc.running = true
+    }
+
+    function spotifyPrevious() {
+        if (root.activeSpotifyPlayer && typeof root.activeSpotifyPlayer.previous === "function") {
+            root.activeSpotifyPlayer.previous()
+        } else {
+            Quickshell.execDetached(["playerctl", "--player=spotify,%any", "previous"])
+        }
+        spotifyPollTimer.restart()
+        if (!spotifyCliProc.running) spotifyCliProc.running = true
+    }
 
     // ─── Device state (brightness / radios) ─────────────────────────────────────
     property real brightnessVal: 0.8
@@ -525,25 +655,320 @@ Pill {
         }
     }
 
-    // ─── The idle face: a plain clock pill or active notification banner ─────────
-    icon: root.bannerActive ? root.bannerIcon : "nest_clock_farsight_analog"
-    label: root.bannerActive ? root.bannerText : Qt.formatDateTime(clock.date, "hh:mm AP")
-    bgColor: root.bannerActive ? Theme.attention : Theme.plum
-    iconColor: root.bannerActive ? Theme.qsOnAccent : Theme.ink
+    // ─── Priority 1 & 2 State Detection ──────────────────────────────────────────
+    readonly property bool hasPendingNotifs: NotificationState.totalCount > 0
+
+    // Priority 1: Ringing animation - swinging like a bell giving out sound
+    SequentialAnimation {
+        id: bellRingAnim
+        running: !root.open && root.hasPendingNotifs && !root.bannerActive
+        loops: Animation.Infinite
+
+        NumberAnimation { target: root; property: "iconRotation"; to: -18; duration: 90; easing.type: Easing.OutQuad }
+        NumberAnimation { target: root; property: "iconRotation"; to: 18; duration: 130; easing.type: Easing.InOutQuad }
+        NumberAnimation { target: root; property: "iconRotation"; to: -14; duration: 110; easing.type: Easing.InOutQuad }
+        NumberAnimation { target: root; property: "iconRotation"; to: 14; duration: 100; easing.type: Easing.InOutQuad }
+        NumberAnimation { target: root; property: "iconRotation"; to: -8; duration: 90; easing.type: Easing.InOutQuad }
+        NumberAnimation { target: root; property: "iconRotation"; to: 8; duration: 80; easing.type: Easing.InOutQuad }
+        NumberAnimation { target: root; property: "iconRotation"; to: 0; duration: 70; easing.type: Easing.InOutQuad }
+
+        PauseAnimation { duration: 1400 }
+
+        onRunningChanged: {
+            if (!running) root.iconRotation = 0
+        }
+    }
+
+    // Priority 2: Music beat pulse animation - pulsing rhythmically to the beat (~120 BPM)
+    SequentialAnimation {
+        id: musicBeatPulseAnim
+        running: !root.open && root.isMusicPlaying && !root.hasPendingNotifs && !root.bannerActive
+        loops: Animation.Infinite
+
+        NumberAnimation { target: root; property: "iconScale"; to: 1.24; duration: 110; easing.type: Easing.OutQuad }
+        NumberAnimation { target: root; property: "iconScale"; to: 1.0; duration: 390; easing.type: Easing.InOutQuad }
+
+        onRunningChanged: {
+            if (!running) root.iconScale = 1.0
+        }
+    }
+
+    // ─── The idle face: a plain clock pill, ringing bell, music note, or active banner ──
+    icon: root.bannerActive ? root.bannerIcon
+        : (!root.open && root.hasPendingNotifs ? "notifications"
+        : (!root.open && root.isMusicPlaying ? "music_note"
+        : "nest_clock_farsight_analog"))
+
+    label: root.bannerActive ? root.bannerText
+         : Qt.formatDateTime(clock.date, "hh:mm AP")
+
+    bgColor: root.bannerActive ? Theme.attention
+           : (!root.open && root.hasPendingNotifs ? Theme.attention
+           : (!root.open && root.isMusicPlaying ? "#1db954"
+           : Theme.plum))
+
+    iconColor: root.bannerActive ? Theme.qsOnAccent
+             : (!root.open && root.hasPendingNotifs ? Theme.qsOnAccent
+             : (!root.open && root.isMusicPlaying ? "#ffffff"
+             : Theme.ink))
+
     labelBg: root.open ? Theme.indigo : Theme.primary
+
     textColor: root.bannerActive ? Theme.attention : Theme.ink
+
     maxLabelWidth: root.bannerActive ? 220 : 150
 
-    // ─── Click = expand / collapse ───────────────────────────────────────────────
+    iconTransformOrigin: (!root.open && root.hasPendingNotifs) ? Item.Top : Item.Center
+
+    customBody: (!root.open && root.isMusicPlaying && root.mediaExtended && !root.hasPendingNotifs && !root.bannerActive)
+        ? mediaControlsBar
+        : null
+
+    // ─── Extended Dynamic Island Media Controls Bar ──────────────────────────────
+    Item {
+        id: mediaControlsBar
+        implicitHeight: Theme.pillHeight
+        implicitWidth: mediaLayout.implicitWidth + 8
+
+        RowLayout {
+            id: mediaLayout
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 8
+
+            // 1. Song Title & Artist text
+            RowLayout {
+                spacing: 4
+                Layout.maximumWidth: 160
+                clip: true
+
+                Text {
+                    id: songTitleTxt
+                    text: root.spotifyTrackTitle
+                    font.family: Theme.fontText
+                    font.pixelSize: 12
+                    font.bold: true
+                    color: Theme.ink
+                    elide: Text.ElideRight
+                    Layout.maximumWidth: 100
+                }
+
+                Text {
+                    visible: root.spotifyTrackArtist !== ""
+                    text: "• " + root.spotifyTrackArtist
+                    font.family: Theme.fontText
+                    font.pixelSize: 11
+                    color: Theme.lavender
+                    elide: Text.ElideRight
+                    Layout.maximumWidth: 55
+                }
+            }
+
+            // Divider
+            Rectangle {
+                implicitWidth: 1
+                implicitHeight: 14
+                color: Theme.pillBorder !== "transparent" ? Theme.pillBorder : Qt.rgba(1, 1, 1, 0.15)
+            }
+
+            // 2. Playback Controls: Previous, Play/Pause, Next
+            RowLayout {
+                spacing: 4
+
+                // Previous Button
+                Rectangle {
+                    implicitWidth: 22
+                    implicitHeight: 22
+                    radius: 11
+                    color: prevArea.containsMouse ? Qt.rgba(1, 1, 1, 0.14) : "transparent"
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "skip_previous"
+                        font.family: Theme.fontIcons
+                        font.pixelSize: 15
+                        color: Theme.ink
+                    }
+
+                    MouseArea {
+                        id: prevArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.spotifyPrevious()
+                    }
+                }
+
+                // Play / Pause Button
+                Rectangle {
+                    implicitWidth: 22
+                    implicitHeight: 22
+                    radius: 11
+                    color: playArea.containsMouse ? "#1ed760" : "#1db954"
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: root.isMusicPlaying ? "pause" : "play_arrow"
+                        font.family: Theme.fontIcons
+                        font.pixelSize: 15
+                        color: "#ffffff"
+                    }
+
+                    MouseArea {
+                        id: playArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.spotifyTogglePlay()
+                    }
+                }
+
+                // Next Button
+                Rectangle {
+                    implicitWidth: 22
+                    implicitHeight: 22
+                    radius: 11
+                    color: nextArea.containsMouse ? Qt.rgba(1, 1, 1, 0.14) : "transparent"
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "skip_next"
+                        font.family: Theme.fontIcons
+                        font.pixelSize: 15
+                        color: Theme.ink
+                    }
+
+                    MouseArea {
+                        id: nextArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.spotifyNext()
+                    }
+                }
+            }
+
+            // Divider
+            Rectangle {
+                implicitWidth: 1
+                implicitHeight: 14
+                color: Theme.pillBorder !== "transparent" ? Theme.pillBorder : Qt.rgba(1, 1, 1, 0.15)
+            }
+
+            // 3. Audio / Volume Controls (Click = mute, Wheel = volume step)
+            RowLayout {
+                spacing: 4
+
+                Rectangle {
+                    implicitWidth: 22
+                    implicitHeight: 22
+                    radius: 11
+                    color: volArea.containsMouse ? Qt.rgba(1, 1, 1, 0.14) : "transparent"
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: root.audioMuted ? "volume_off"
+                            : (root.audioVolumePct > 50 ? "volume_up"
+                            : (root.audioVolumePct > 0 ? "volume_down" : "volume_mute"))
+                        font.family: Theme.fontIcons
+                        font.pixelSize: 14
+                        color: root.audioMuted ? Theme.attention : Theme.ink
+                    }
+
+                    MouseArea {
+                        id: volArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.toggleAudioMute()
+                        onWheel: wheel => {
+                            root.stepAudioVolume(wheel.angleDelta.y > 0 ? 1 : -1)
+                        }
+                    }
+                }
+
+                Text {
+                    text: root.audioMuted ? "Mute" : (root.audioVolumePct + "%")
+                    font.family: Theme.fontText
+                    font.pixelSize: 10
+                    font.bold: true
+                    color: Theme.lavender
+                }
+            }
+
+            // 4. Open full Hub Window Button
+            Rectangle {
+                implicitWidth: 20
+                implicitHeight: 20
+                radius: 10
+                color: expandBtnArea.containsMouse ? Qt.rgba(1, 1, 1, 0.14) : "transparent"
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "open_in_full"
+                    font.family: Theme.fontIcons
+                    font.pixelSize: 12
+                    color: Theme.lavender
+                }
+
+                MouseArea {
+                    id: expandBtnArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.expand()
+                }
+            }
+
+            // 5. Retract / Close Button
+            Rectangle {
+                implicitWidth: 20
+                implicitHeight: 20
+                radius: 10
+                color: closeBtnArea.containsMouse ? Qt.rgba(1, 1, 1, 0.14) : "transparent"
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "close"
+                    font.family: Theme.fontIcons
+                    font.pixelSize: 13
+                    color: Theme.lavender
+                }
+
+                MouseArea {
+                    id: closeBtnArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        root.mediaExtended = false
+                    }
+                }
+            }
+        }
+    }
+
+    // ─── Click = expand / collapse / notification / media ─────────────────────────
     MouseArea {
         id: clickArea
         anchors.fill: parent
         cursorShape: Qt.PointingHandCursor
-        onClicked: {
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        onClicked: mouse => {
+            if (mouse.button === Qt.RightButton) {
+                root.toggle()
+                return
+            }
+
             if (root.bannerActive) {
                 root.bannerActive = false
                 bannerTimer.stop()
                 root.openTab("notifications")
+            } else if (!root.open && root.hasPendingNotifs) {
+                // Priority #1: Click on ringing bell opens notifications tab in hub!
+                root.openTab("notifications")
+            } else if (!root.open && root.isMusicPlaying) {
+                // Priority #2: Click on pulsing music note extends/retracts media controls!
+                root.mediaExtended = !root.mediaExtended
             } else {
                 root.toggle()
             }
@@ -566,17 +991,18 @@ Pill {
                 root.setTab(tab)
             }
         } else {
-            root.expand()
+            root.expand(tab)
             root.setTab(tab)
         }
     }
 
     function openTab(tab) {
-        if (!popup.visible) root.expand()
+        if (!popup.visible) root.expand(tab)
         root.setTab(tab)
     }
 
-    function expand() {
+    function expand(initialTab) {
+        root.mediaExtended = false
         root.bannerActive = false
         bannerTimer.stop()
         closeDelay.stop()               // cancel a close that's mid-flight
@@ -584,7 +1010,7 @@ Pill {
         closing = false
         stopAllAnims()
         prepareFace()                   // undo whatever a previous close left behind
-        root.currentTab = "calendar"    // ALWAYS default to calendar on open
+        root.currentTab = initialTab || "calendar"    // default to calendar or requested tab on open
         root.hubPage = "main"
         root.themePage = "picker"
         root.wallIndex = root.currentWallIdx()
