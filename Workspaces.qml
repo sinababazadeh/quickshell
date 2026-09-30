@@ -42,19 +42,24 @@ Rectangle {
     }
 
     // --- LEFT ZONE: overview trigger icon (the grid_view button) -----------------
-    // Opens the Hyprland "expo" overview (hyprexpo plugin).
+    // Opens the interactive workspace overview layout.
     Rectangle {
         id: iconSeg
         width: iconTxt.width + 14
         height: parent.height
         anchors.left: parent.left
         anchors.verticalCenter: parent.verticalCenter
-        color: Theme.plum
+        color: WorkspaceOverviewState.active ? Theme.attention
+             : (iconMouse.containsMouse ? Theme.attention : Theme.plum)
 
         topLeftRadius: height / 2
         bottomLeftRadius: height / 2
         topRightRadius: 0
         bottomRightRadius: 0
+
+        Behavior on color {
+            ColorAnimation { duration: 150 }
+        }
 
         Text {
             id: iconTxt
@@ -62,17 +67,17 @@ Rectangle {
             text: "grid_view"
             font.family: Theme.fontIcons
             font.pixelSize: 16
-            color: Theme.ink
+            color: WorkspaceOverviewState.active ? Theme.qsOnAccent : Theme.ink
             leftPadding: 4
         }
 
         MouseArea {
+            id: iconMouse
             anchors.fill: parent
+            hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
             onClicked: {
-                Hyprland.dispatch('hl.plugin.hyprexpo.expo')
-                Hyprland.dispatch('hyprexpo:expo, toggle')
-                Quickshell.execDetached(["hyprctl", "dispatch", "hyprexpo:expo", "toggle"])
+                WorkspaceOverviewState.toggle()
             }
         }
     }

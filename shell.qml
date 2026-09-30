@@ -42,6 +42,14 @@ ShellRoot {
         ThemeStudio {}
     }
 
+    // ─── WORKSPACES OVERVIEW (Exposé / Mission Control) ─────────────────────────
+    // Interactive multi-monitor workspace gallery with live window layouts.
+    // Triggered by clicking the Workspaces pill icon or via Hyprland keybind.
+    Variants {
+        model: Quickshell.screens
+        WorkspaceOverview {}
+    }
+
     // ─── ONE BAR PER MONITOR ────────────────────────────────────────────────────
     // `Variants` is Quickshell's way of saying "run this block once per item in
     // `model`". Quickshell.screens is the list of connected displays, so this
