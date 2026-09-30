@@ -14,6 +14,7 @@
 //                   2. Easy Effects (easyeffects - audio effects & equalizer)
 // =============================================================================
 import Quickshell
+import Quickshell.Wayland
 import Quickshell.Services.Pipewire
 import Quickshell.Hyprland
 import QtQuick
@@ -36,7 +37,10 @@ Pill {
 
     readonly property real volume: audio ? audio.volume : 0
     readonly property bool muted: audio ? audio.muted : false
-    readonly property int volumePercent: Math.round(volume * 100)
+    readonly property int volumePercent: {
+        let pct = Math.round(volume * 100)
+        return pct >= 99 ? 100 : (pct <= 1 ? 0 : pct)
+    }
 
     // --- Dynamic icon + label (bindings, re-evaluate on every change) -----------
     icon: muted ? "volume_off"
